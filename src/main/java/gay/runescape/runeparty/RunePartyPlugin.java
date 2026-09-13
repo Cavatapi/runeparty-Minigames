@@ -31,6 +31,7 @@ import gay.runescape.runeparty.overlays.AnnouncementOverlay;
 import gay.runescape.runeparty.overlays.ClickClickClickOverlay;
 import gay.runescape.runeparty.overlays.CoinRushScoreboardOverlay;
 import gay.runescape.runeparty.overlays.ConfettiOverlay;
+import gay.runescape.runeparty.overlays.CrabRaveHudOverlay;
 import gay.runescape.runeparty.overlays.CrabRaveNpcOverlay;
 import gay.runescape.runeparty.overlays.DanceDanceRuneScapeHudOverlay;
 import gay.runescape.runeparty.overlays.DanceDanceRuneScapeOverlay;
@@ -406,9 +407,8 @@ public class RunePartyPlugin extends Plugin
     // "merge every composition part into one lit Model" shape JaddyDuelModel's own idle Jads use.
     public static final int GEMSTONE_CRAB_NPC_ID = 14779;
 
-    // The Gemstone Crab's own idle loop -- per the user's own explicit pick, not the composition's
-    // own listed standingAnimation of 12480 (see CrabRaveNpcOverlay's own doc).
-    public static final int GEMSTONE_CRAB_IDLE_ANIMATION_ID = 12482;
+    // not the crab's own listed standingAnimation of 12480 (see CrabRaveNpcOverlay's own doc)
+    public static final int GEMSTONE_CRAB_IDLE_ANIMATION_ID = 12483;
 
     /** How long each light of Rainbow Rush's own "traffic light" get-ready sequence stays lit --
      * red, then orange, then green (see AnnouncementOverlay#renderRainbowRushTrafficLight) --
@@ -774,6 +774,7 @@ public class RunePartyPlugin extends Plugin
     private JadEncounter jadEncounter;
     private JaddyDuelModel jaddyDuelModel;
     private CrabRaveNpcOverlay crabRaveNpcOverlay;
+    private CrabRaveHudOverlay crabRaveHudOverlay;
     private FishingCatchOverlay fishingCatchOverlay;
     private ClickClickClickOverlay clickClickClickOverlay;
     private HotPotatoOverlay hotPotatoOverlay;
@@ -1175,6 +1176,9 @@ public class RunePartyPlugin extends Plugin
         crabRaveNpcOverlay = new CrabRaveNpcOverlay(client, this);
         overlayManager.add(crabRaveNpcOverlay);
 
+        crabRaveHudOverlay = new CrabRaveHudOverlay(this);
+        overlayManager.add(crabRaveHudOverlay);
+
         fishingCatchOverlay = new FishingCatchOverlay(this);
         overlayManager.add(fishingCatchOverlay);
 
@@ -1239,6 +1243,7 @@ public class RunePartyPlugin extends Plugin
         if (jadEncounter != null) { jadEncounter.clear(); overlayManager.remove(jadEncounter); }
         if (jaddyDuelModel != null) { jaddyDuelModel.clear(); overlayManager.remove(jaddyDuelModel); }
         if (crabRaveNpcOverlay != null) { crabRaveNpcOverlay.clear(); overlayManager.remove(crabRaveNpcOverlay); }
+        if (crabRaveHudOverlay != null) overlayManager.remove(crabRaveHudOverlay);
         if (fishingCatchOverlay != null) overlayManager.remove(fishingCatchOverlay);
         if (clickClickClickOverlay != null) overlayManager.remove(clickClickClickOverlay);
         if (hotPotatoOverlay != null) overlayManager.remove(hotPotatoOverlay);

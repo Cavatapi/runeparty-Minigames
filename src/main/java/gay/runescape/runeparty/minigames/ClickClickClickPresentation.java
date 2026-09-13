@@ -29,6 +29,11 @@ public final class ClickClickClickPresentation implements MinigamePresentationFe
         roundStartAt = 0;
     }
 
+    /** A real, varying per-player unique-tile-click count worth a "FINAL SCORE" recap -- see
+     * MinigamePresentationFeature's own doc. */
+    @Override
+    public boolean showsFinalScore() { return true; }
+
     /** When the current Click, Click, Click round's own local click-timer should stop -- 0 if no
      * round is active yet or the round hasn't actually become playable. RunePartyPlugin#
      * onGameTick's own click-click-click section compares against this to decide when to submit

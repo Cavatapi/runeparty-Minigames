@@ -33,6 +33,11 @@ public final class FishingContestPresentation implements MinigamePresentationFea
         roundStartAt = 0;
     }
 
+    /** A real, varying per-player catch count worth a "FINAL SCORE" recap -- see
+     * MinigamePresentationFeature's own doc. */
+    @Override
+    public boolean showsFinalScore() { return true; }
+
     /** When the current Fishing Contest round's own local catch-timer should stop -- 0 if no round
      * is active yet or the round hasn't actually become playable. RunePartyPlugin#onGameTick's own
      * fishing section compares against this to decide when to submit the local player's final

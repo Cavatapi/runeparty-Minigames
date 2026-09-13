@@ -6,6 +6,8 @@ import gay.runescape.runeparty.SceneObjectSet;
 
 import net.runelite.api.Animation;
 import net.runelite.api.Client;
+import net.runelite.api.Model;
+import net.runelite.api.NPCComposition;
 import net.runelite.api.RuneLiteObject;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.client.ui.overlay.Overlay;
@@ -14,42 +16,100 @@ import net.runelite.client.ui.overlay.OverlayPosition;
 
 import java.awt.Dimension;
 import java.awt.Graphics2D;
-import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import lombok.extern.slf4j.Slf4j;
 
-/** Spawns a single, purely-decorative Gemstone Crab NPC model (composition {@link
- * RunePartyPlugin#GEMSTONE_CRAB_NPC_ID}) dead center of the Crab Rave arena for as long as that
- * mini-game is active -- the arena's own atmosphere otherwise comes from its single merged outline
- * plus the randomly-flashing "club lighting" cells (see TileOverlay#renderCrabRaveTile), not a
- * crowd of crabs. Zero gameplay effect, so unlike JaddyDuelModel (which spawns the same shape of
- * thing for a real duel) there's no recolor, no health bar, no death sequence, and no
- * server-driven spawn event: the crab's own real-world position is derived purely from the
- * currently-marked CRAB_RAVE_TILE tiles' own bounding box (see {@link #relativeOffsets}), the same
+/** Spawns a small, purely-decorative crowd of crab NPC models across the Crab Rave arena for as
+ * long as that mini-game is active -- a centerpiece Gemstone Crab plus eight smaller crabs spread
+ * around it (see {@link #SPAWNS}). Zero gameplay effect, so unlike JaddyDuelModel (which spawns
+ * the same shape of thing for a real duel) there's no recolor, no health bar, no death sequence,
+ * and no server-driven spawn event: every crab's own real-world position is derived purely from
+ * the currently-marked CRAB_RAVE_TILE tiles' own bounding box (see {@link #spawnPoint}), the same
  * "client derives shared geometry from tiles it already has, no wire data needed" reasoning every
  * other arena mini-game's own client geometry already relies on -- since placement has no gameplay
- * consequence, every client landing on the identical spot is enough, no broadcast required.
+ * consequence, every client landing on the identical spots is enough, no broadcast required.
  * <p>
- * Idles on {@link RunePartyPlugin#GEMSTONE_CRAB_IDLE_ANIMATION_ID} in a loop the whole time --
- * applied once per freshly-spawned object (checked via {@code getAnimation() == null}, simpler
- * than JaddyDuelModel's own boolean-flag idiom since there's no second, later animation this class
- * ever needs to switch to). */
+ * Each spawn idles on its own {@link Spawn#animationId} in a loop the whole time -- not
+ * necessarily that NPC composition's own listed standingAnimation (the Jewelled Crabs are
+ * deliberately looped on a different animation than their own default, per the user's own explicit
+ * picks) -- applied once per freshly-spawned object (checked via {@code getAnimation() == null},
+ * simpler than JaddyDuelModel's own boolean-flag idiom since there's no second, later animation
+ * this class ever needs to switch to). */
+@Slf4j
 public final class CrabRaveNpcOverlay extends Overlay
 {
-    // One crab, dead center of the arena -- GRID_SIZE is 8 (minigames/crab_rave.py), so (4, 4) is
-    // the closest single tile to the block's own true center (3.5, 3.5). Per the user's own
-    // explicit call: a single centerpiece crab, not a crowd -- the "rave" now reads through the
-    // dance floor's own randomly-flashing club lighting (see TileOverlay#renderCrabRaveTile)
-    // instead of multiple crabs.
-    private static final int[][] RELATIVE_OFFSETS =
+    /** One decorative NPC spawn slot -- which composition, which animation to loop on it, and
+     * where relative to the arena's own bounding box (see {@link #spawnPoint}). */
+    private static final class Spawn
     {
-        {4, 4},
-    };
+        final int npcId;
+        final int animationId;
+        final int dx, dy;
+
+        Spawn(int npcId, int animationId, int dx, int dy)
+        {
+            this.npcId = npcId;
+            this.animationId = animationId;
+            this.dx = dx;
+            this.dy = dy;
+        }
+    }
+
+    // Plain "Crab" -- loops its own default standing animation (8461), distinct from the three
+    // Jewelled Crabs below, which are each looped on a specific animation instead of their own
+    // listed standingAnimation (1310), per the user's own explicit picks.
+    private static final int CRAB_NPC_ID = 9201;
+    private static final int CRAB_ANIMATION_ID = 8461;
+    // Each Jewelled Crab color spawns twice (see SPAWNS below), one copy on each of these two
+    // animations rather than both matching -- deliberately "opposite" of each other for visual
+    // variety, per the user's own explicit ask. Shared across all three colors rather than each
+    // color getting its own pair of constants, since it's the same two animations either way.
+    private static final int JEWELLED_CRAB_ANIMATION_ID_1 = 2368;
+    private static final int JEWELLED_CRAB_ANIMATION_ID_2 = 1312;
+    private static final int JEWELLED_CRAB_BLUE_NPC_ID = 7579;
+    private static final int JEWELLED_CRAB_RED_NPC_ID = 7577;
+    private static final int JEWELLED_CRAB_GREEN_NPC_ID = 7578;
+    private static final int HERMIT_CRAB_NPC_ID = 14852;
+    private static final int HERMIT_CRAB_ANIMATION_ID = 12538;
+
+    // GRID_SIZE is 8 (minigames/crab_rave.py) -- (4, 4) is the closest single tile to the block's
+    // own true center (3.5, 3.5), where the Gemstone Crab stands. Every other spawn's own (dx, dy)
+    // is chosen so no two crabs share a tile and -- per the user's own explicit ask -- neither
+    // Jewelled Crab pair sits adjacent to its own other copy (each pair's own two tiles are at
+    // least 2 tiles apart, Chebyshev distance): blue (6,1)/(1,3), red (1,6)/(2,4), green
+    // (6,3)/(3,6). Different-colored crabs can and do end up near each other (e.g. blue's (1,3)
+    // and red's (2,4) are diagonally adjacent) -- only a color sitting next to its own other copy
+    // was the thing to avoid.
+    private static final List<Spawn> SPAWNS = List.of(
+        new Spawn(RunePartyPlugin.GEMSTONE_CRAB_NPC_ID, RunePartyPlugin.GEMSTONE_CRAB_IDLE_ANIMATION_ID, 4, 4),
+        new Spawn(CRAB_NPC_ID, CRAB_ANIMATION_ID, 1, 1),
+        new Spawn(JEWELLED_CRAB_BLUE_NPC_ID, JEWELLED_CRAB_ANIMATION_ID_1, 6, 1),
+        new Spawn(JEWELLED_CRAB_BLUE_NPC_ID, JEWELLED_CRAB_ANIMATION_ID_2, 1, 3),
+        new Spawn(JEWELLED_CRAB_RED_NPC_ID, JEWELLED_CRAB_ANIMATION_ID_1, 1, 7),
+        new Spawn(JEWELLED_CRAB_RED_NPC_ID, JEWELLED_CRAB_ANIMATION_ID_2, 2, 8),
+        new Spawn(JEWELLED_CRAB_GREEN_NPC_ID, JEWELLED_CRAB_ANIMATION_ID_1, 6, 7),
+        new Spawn(JEWELLED_CRAB_GREEN_NPC_ID, JEWELLED_CRAB_ANIMATION_ID_2, 3, 6),
+        new Spawn(HERMIT_CRAB_NPC_ID, HERMIT_CRAB_ANIMATION_ID, 4, 1)
+    );
 
     private final Client client;
     private final RunePartyPlugin plugin;
     private final SceneObjectSet<Integer> objects;
+    // Which npcId's composition has already been diagnostic-logged once (see loadCrabModel) --
+    // per-id, since each of the 5 spawns above resolves an entirely independent composition that
+    // could succeed or fail on its own.
+    private final Set<Integer> loggedCompositionIds = new HashSet<>();
+    // Throttles logDiagnosticIfNeeded to roughly once every 2 seconds per npcId -- render() calls
+    // this every frame for any spawn that hasn't successfully appeared yet, and without this a
+    // genuinely stuck "never resolves" state would spam the log at ~60Hz instead of giving one
+    // readable line per id at a steady cadence, same shape JaddyDuelModel's own
+    // logZoneDiagnosticIfNeeded uses.
+    private final Map<Integer, Long> lastDiagnosticLogAt = new HashMap<>();
 
     public CrabRaveNpcOverlay(Client client, RunePartyPlugin plugin)
     {
@@ -70,25 +130,34 @@ public final class CrabRaveNpcOverlay extends Overlay
             return null;
         }
 
-        List<WorldPoint> spots = relativeOffsets();
-        if (spots.isEmpty())
+        List<WorldPoint> tiles = plugin.findCrabRaveTilePoints();
+        if (tiles.isEmpty())
         {
             clear();
             return null;
         }
 
-        Set<Integer> desired = new HashSet<>();
-        for (int i = 0; i < spots.size(); i++) desired.add(i);
+        int minX = tiles.stream().mapToInt(WorldPoint::getX).min().orElseThrow();
+        int minY = tiles.stream().mapToInt(WorldPoint::getY).min().orElseThrow();
+        int plane = tiles.get(0).getPlane();
 
-        objects.sync(desired, i -> spots.get(i), i -> RunePartyRender.loadNpcModel(client, RunePartyPlugin.GEMSTONE_CRAB_NPC_ID));
+        Set<Integer> desired = new HashSet<>();
+        for (int i = 0; i < SPAWNS.size(); i++) desired.add(i);
+
+        objects.sync(desired, i -> spawnPoint(SPAWNS.get(i), minX, minY, plane), i -> loadCrabModel(SPAWNS.get(i).npcId));
 
         for (Integer i : desired)
         {
+            Spawn spawn = SPAWNS.get(i);
             RuneLiteObject obj = objects.get(i);
-            if (obj == null || obj.getModel() == null) continue;
+            if (obj == null || obj.getModel() == null)
+            {
+                logDiagnosticIfNeeded(spawn.npcId);
+                continue;
+            }
             if (obj.getAnimation() == null)
             {
-                Animation anim = client.loadAnimation(RunePartyPlugin.GEMSTONE_CRAB_IDLE_ANIMATION_ID);
+                Animation anim = client.loadAnimation(spawn.animationId);
                 if (anim != null)
                 {
                     obj.setShouldLoop(true);
@@ -100,31 +169,51 @@ public final class CrabRaveNpcOverlay extends Overlay
         return null;
     }
 
-    /** Every crab's own real-world spawn point, derived from the current CRAB_RAVE_TILE arena's
-     * own bounding box plus {@link #RELATIVE_OFFSETS} -- empty if the board isn't actually
-     * swapped to the arena right now (e.g. mid board-swap, or the round already ended). */
-    private List<WorldPoint> relativeOffsets()
+    private static WorldPoint spawnPoint(Spawn spawn, int minX, int minY, int plane)
     {
-        List<WorldPoint> tiles = plugin.findCrabRaveTilePoints();
-        if (tiles.isEmpty()) return List.of();
-
-        int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE;
-        int plane = tiles.get(0).getPlane();
-        for (WorldPoint p : tiles)
-        {
-            minX = Math.min(minX, p.getX());
-            minY = Math.min(minY, p.getY());
-        }
-
-        List<WorldPoint> spots = new ArrayList<>();
-        for (int[] offset : RELATIVE_OFFSETS)
-        {
-            spots.add(new WorldPoint(minX + offset[0], minY + offset[1], plane));
-        }
-        return spots;
+        return new WorldPoint(minX + spawn.dx, minY + spawn.dy, plane);
     }
 
-    /** Despawns and forgets every Gemstone Crab RuneLiteObject -- a RuneLiteObject otherwise stays
+    /** Thin wrapper over RunePartyRender.loadNpcModel that also logs (once per npcId) exactly what
+     * that composition actually resolved to, the instant it first becomes available --
+     * loadNpcModel/loadNpcModelData return null identically for "not cached yet, keep retrying"
+     * and "this id doesn't resolve to a real, model-bearing composition," which are otherwise
+     * indistinguishable from the outside (see JaddyDuelModel's own "Jads invisible, nothing else
+     * wrong" diagnostic doc for the exact same class of silent-failure report this is written to
+     * head off). Logs the composition's own real name and model id array so a wrong or stale npcId
+     * is immediately visible rather than just "that crab never appears." */
+    private Model loadCrabModel(int npcId)
+    {
+        NPCComposition comp = client.getNpcDefinition(npcId);
+        if (comp != null && loggedCompositionIds.add(npcId))
+        {
+            int[] modelIds = comp.getModels();
+            log.warn("CrabRaveNpcOverlay: NPC {} resolved -- name='{}' models={}",
+                npcId, comp.getName(), modelIds == null ? "null" : Arrays.toString(modelIds));
+        }
+        return RunePartyRender.loadNpcModel(client, npcId);
+    }
+
+    private void logDiagnosticIfNeeded(int npcId)
+    {
+        long now = System.currentTimeMillis();
+        Long last = lastDiagnosticLogAt.get(npcId);
+        if (last != null && now - last < 2000) return;
+        lastDiagnosticLogAt.put(npcId, now);
+
+        NPCComposition comp = client.getNpcDefinition(npcId);
+        if (comp == null)
+        {
+            log.warn("CrabRaveNpcOverlay: NPC {} still hasn't resolved a composition at all -- either not cached yet, or this id doesn't exist in the current game data", npcId);
+        }
+        else
+        {
+            log.warn("CrabRaveNpcOverlay: NPC {} composition resolved (name='{}') but no Model has spawned yet -- either its model parts aren't cached yet, or getModels() is empty",
+                npcId, comp.getName());
+        }
+    }
+
+    /** Despawns and forgets every Crab Rave RuneLiteObject -- a RuneLiteObject otherwise stays
      * registered with the client independently of this overlay or even the plugin being active. */
     public void clear()
     {

@@ -1505,10 +1505,14 @@ public class AnnouncementOverlay extends Overlay
     }
 
     /** Crab Rave's own big centered countdown, ticking down from getCrabRaveEndsAt() -- same
-     * secondsLeft math renderTrueOrFalseQuestion's own countdown number already uses. Shown for
-     * the whole round (no separate "get ready" phase -- the round begins on the standard
-     * "3...2...1...BEGIN!" spinner, not an arrival gate, see minigames/crab_rave.py's own doc), and
-     * stops the instant the clock actually runs out rather than lingering into the reveal. */
+     * secondsLeft math renderTrueOrFalseQuestion's own countdown number already uses. No
+     * instructional subtitle here -- the mini-game's own instructions banner (shown once, at
+     * MINIGAME_STARTED) already told players to dance, so a second persistent reminder for the
+     * whole round would just be clutter (see CrabRaveHudOverlay for the local dance counter that
+     * replaces it as the round's own persistent UI). Shown for the whole round (no separate "get
+     * ready" phase -- the round begins on the standard "3...2...1...BEGIN!" spinner, not an arrival
+     * gate, see minigames/crab_rave.py's own doc), and stops the instant the clock actually runs
+     * out rather than lingering into the reveal. */
     private void renderCrabRaveCountdown(Graphics2D g)
     {
         if (!plugin.isCrabRaveActive()) return;
@@ -1521,12 +1525,9 @@ public class AnnouncementOverlay extends Overlay
         int centerX = client.getCanvasWidth() / 2;
         int y = client.getCanvasHeight() / 3;
 
-        g.setFont(FontManager.getRunescapeBoldFont().deriveFont(GOLDEN_GNOME_OFFER_SUBTITLE_SIZE));
-        drawCenteredText(g, "Do the Dance emote on the dance floor!", centerX, y, Color.WHITE, 1f);
-
         int secondsLeft = (int) Math.max(0, Math.ceil((endsAt - now) / 1000.0));
         g.setFont(MARIO_PARTY_FONT.deriveFont(TRUE_OR_FALSE_COUNTDOWN_SIZE));
-        drawCenteredText(g, String.valueOf(secondsLeft), centerX, y + 40, TRUE_OR_FALSE_COUNTDOWN_COLOR, 1f);
+        drawCenteredText(g, String.valueOf(secondsLeft), centerX, y, TRUE_OR_FALSE_COUNTDOWN_COLOR, 1f);
     }
 
     /** Draws the previous True or False round's reveal -- the correct answer, plus every player's
