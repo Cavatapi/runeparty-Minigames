@@ -260,6 +260,21 @@ public class ApiClient
         }
     }
 
+    /** Submits the local player's final Crab Rave Dance-emote tally. Fired once per round, when
+     * the local 30-second timer elapses -- same one-shot shape as submitClickClickClickResult. */
+    public void submitCrabRaveResult(String gameId, String playerRsn, String playerToken, int danceCount) throws IOException
+    {
+        JsonObject body = new JsonObject();
+        body.addProperty("player", playerRsn);
+        body.addProperty("danceCount", danceCount);
+
+        try (Response resp = post("/v1/games/" + gameId + "/submit-crab-rave-result", body, playerToken))
+        {
+            String raw = bodyString(resp);
+            if (!resp.isSuccessful()) throw new ApiHttpException(resp.code(), "Submit Crab Rave result failed (" + resp.code() + "): " + raw);
+        }
+    }
+
     /** Reports the local player's final Dance, Dance, RuneScape tally -- called exactly once per
      * round, when the local 30-second timer elapses -- same one-shot shape as
      * submitFishingCatch/submitClickClickClickResult. */

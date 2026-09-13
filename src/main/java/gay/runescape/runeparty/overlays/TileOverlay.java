@@ -35,6 +35,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 
 /** Renders the course: committed tiles from TileReducer, plus a live placement/removal preview
  * while the host is building. A course is a one-tile-wide walked path, so every tile renders
@@ -131,6 +132,23 @@ public class TileOverlay extends Overlay
     // attempted at all, correct or not (see renderRepeatAfterMeTile).
     private static final Color REPEAT_AFTER_ME_CORRECT_FILL_COLOR = new Color(60, 200, 90, 170);
     private static final Color REPEAT_AFTER_ME_INCORRECT_FILL_COLOR = new Color(220, 60, 60, 170);
+    // Crab Rave's own arena outline -- a hot pink, matching CrabRaveTile's own served color_hex
+    // (#E91E8C), so the arena floor's outline and the tile-type legend agree.
+    private static final Color CRAB_RAVE_ARENA_OUTLINE_COLOR = new Color(233, 30, 140, 190);
+    // A small "club lighting" palette for Crab Rave's own randomly-flashing dance-floor cells (see
+    // renderCrabRaveTile/computeCrabRaveLitColors) -- purely decorative, saturated neon colors
+    // meant to read as disco lights rather than anything meaningful to click or avoid.
+    private static final Color[] CRAB_RAVE_LIGHT_COLORS =
+    {
+        new Color(255, 20, 147, 190), // hot pink
+        new Color(0, 220, 255, 190),  // cyan
+        new Color(190, 0, 255, 190),  // purple
+        new Color(255, 230, 0, 190),  // electric yellow
+        new Color(50, 255, 120, 190), // lime green
+    };
+    private static final long CRAB_RAVE_LIGHT_PHASE_MS = 2000; // how often the lit pattern changes
+    private static final int CRAB_RAVE_LIT_TILE_COUNT = 10; // out of the 8x8 = 64 arena
+    private static final int CRAB_RAVE_GRID_SIZE = 8; // matches the server's own GRID_SIZE (minigames/crab_rave.py)
 
     private static final Stroke SOLID_STROKE   = new BasicStroke(3.5f);
     private static final Stroke PREVIEW_STROKE = new BasicStroke(3.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND, 10f, new float[]{7f, 5f}, 0f);
@@ -230,6 +248,13 @@ public class TileOverlay extends Overlay
         // which would otherwise re-scan the whole tile snapshot 16 times a frame (once per cell).
         List<WorldPoint> repeatAfterMeTiles = plugin.isRepeatAfterMeActive()
             ? plugin.findRepeatAfterMeTilePoints() : Collections.emptyList();
+        // Same "compute once per frame" reasoning as repeatAfterMeTiles above -- see
+        // renderCrabRaveTile, the only reader. Empty (and thus never fills anything) unless the
+        // arena's actually swapped in.
+        List<WorldPoint> crabRaveTiles = plugin.isCrabRaveActive()
+            ? plugin.findCrabRaveTilePoints() : Collections.emptyList();
+        Map<Integer, Color> crabRaveLitColors = crabRaveTiles.isEmpty()
+            ? Collections.emptyMap() : computeCrabRaveLitColors();
 
         for (TileReducer.TileEntry entry : entries)
         {
@@ -241,6 +266,7 @@ public class TileOverlay extends Overlay
             if ("SANDWICH_RUSH_TILE".equals(entry.tileType)) continue; // rendered as one merged-zone outline instead, see renderArenaOutline below -- these tiles never change color, so an individual fill per tile is just noise
             if ("HOT_POTATO_TILE".equals(entry.tileType)) continue; // rendered as one merged-zone outline instead, see renderArenaOutline below -- same "never change color, individual fill is just noise" reasoning as Sandwich Rush's own SANDWICH_RUSH_TILE
             if ("REPEAT_AFTER_ME_TILE".equals(entry.tileType)) { renderRepeatAfterMeTile(g, entry, repeatAfterMeTiles); continue; } // fill only (peek/lit cells), no per-tile outline -- see renderRepeatAfterMeTile
+            if ("CRAB_RAVE_TILE".equals(entry.tileType)) { renderCrabRaveTile(g, entry, crabRaveTiles, crabRaveLitColors); continue; } // fill only (randomly-flashing "club light" cells), no per-tile outline -- see renderCrabRaveTile
             if ("JADDY_TILE".equals(entry.tileType)) continue; // rendered as one merged-zone outline per color instead, see renderColorGroupedOutlines below -- a Jad's own zone is a fixed-color area a huge model stands on top of, not a walked path, so a per-tile fill/outline would just be noise under it
             if ("TURF_WARS_TILE".equals(entry.tileType)) { renderTurfWarsTile(g, entry); continue; } // fill only, no per-tile outline, see renderTurfWarsTile
             // Also gated on isMinigameSelectionRevealed() -- isRainbowRushActive() alone flips true
@@ -259,6 +285,7 @@ public class TileOverlay extends Overlay
         renderArenaOutline(g, entries, "SANDWICH_RUSH_TILE", SANDWICH_RUSH_ARENA_OUTLINE_COLOR);
         renderArenaOutline(g, entries, "HOT_POTATO_TILE", HOT_POTATO_ARENA_OUTLINE_COLOR);
         renderArenaOutline(g, entries, "REPEAT_AFTER_ME_TILE", REPEAT_AFTER_ME_ARENA_OUTLINE_COLOR);
+        renderArenaOutline(g, entries, "CRAB_RAVE_TILE", CRAB_RAVE_ARENA_OUTLINE_COLOR);
         renderColorGroupedOutlines(g, entries, "JADDY_TILE");
 
         goldenGnomeModel.update(entries);
@@ -837,7 +864,7 @@ public class TileOverlay extends Overlay
         {
             if (plugin.getRepeatAfterMeTargetIndices().contains(index))
             {
-                fillRepeatAfterMeCell(g, entry.point, REPEAT_AFTER_ME_PEEK_FILL_COLOR);
+                fillArenaCell(g, entry.point, REPEAT_AFTER_ME_PEEK_FILL_COLOR);
             }
             return;
         }
@@ -847,7 +874,7 @@ public class TileOverlay extends Overlay
         if (plugin.isRepeatAfterMeRevealActive())
         {
             boolean correct = plugin.getRepeatAfterMeTargetIndices().contains(index);
-            fillRepeatAfterMeCell(g, entry.point, correct ? REPEAT_AFTER_ME_CORRECT_FILL_COLOR : REPEAT_AFTER_ME_INCORRECT_FILL_COLOR);
+            fillArenaCell(g, entry.point, correct ? REPEAT_AFTER_ME_CORRECT_FILL_COLOR : REPEAT_AFTER_ME_INCORRECT_FILL_COLOR);
         }
         else
         {
@@ -857,7 +884,9 @@ public class TileOverlay extends Overlay
         }
     }
 
-    private void fillRepeatAfterMeCell(Graphics2D g, WorldPoint point, Color fill)
+    /** Fill-only cell render shared by renderRepeatAfterMeTile and renderCrabRaveTile -- no
+     * per-tile outline, same "one merged zone outline instead" shape renderTurfWarsTile uses. */
+    private void fillArenaCell(Graphics2D g, WorldPoint point, Color fill)
     {
         Collection<WorldPoint> localPoints = WorldPoint.toLocalInstance(client.getTopLevelWorldView(), point);
         for (WorldPoint local : localPoints)
@@ -871,6 +900,61 @@ public class TileOverlay extends Overlay
             g.setColor(fill);
             g.fill(roundedInsetPolygon(poly, TILE_OUTLINE_INSET_PX, TILE_OUTLINE_CORNER_RADIUS_PX));
         }
+    }
+
+    /** Draws one Crab Rave arena cell -- fill only (see fillArenaCell), no per-tile outline, just
+     * the merged CRAB_RAVE_ARENA_OUTLINE_COLOR outline every cell already shares (see
+     * renderArenaOutline). Purely decorative "club lighting": whichever CRAB_RAVE_LIT_TILE_COUNT
+     * cells computeCrabRaveLitColors chose for the current CRAB_RAVE_LIGHT_PHASE_MS window fill
+     * their own assigned neon color; every other cell gets nothing. Zero gameplay meaning -- unlike
+     * Repeat After Me's own target/attempted cells, there's nothing here to remember or avoid. */
+    private void renderCrabRaveTile(Graphics2D g, TileReducer.TileEntry entry, List<WorldPoint> crabRaveTiles, Map<Integer, Color> litColors)
+    {
+        Integer index = crabRaveIndexForPoint(crabRaveTiles, entry.point);
+        if (index == null) return;
+
+        Color color = litColors.get(index);
+        if (color != null) fillArenaCell(g, entry.point, color);
+    }
+
+    /** cell (dx, dy)'s own index is dy * CRAB_RAVE_GRID_SIZE + dx, row-major relative to the
+     * arena's own minimum corner -- same derivation RepeatAfterMePresentation#indexForPoint uses,
+     * just kept local to this class since nothing outside rendering ever needs a Crab Rave cell's
+     * own index (unlike Repeat After Me, where the client's own spin-detection needs the identical
+     * math too). */
+    private static Integer crabRaveIndexForPoint(List<WorldPoint> tiles, WorldPoint point)
+    {
+        if (tiles.size() != CRAB_RAVE_GRID_SIZE * CRAB_RAVE_GRID_SIZE || !tiles.contains(point)) return null;
+
+        int minX = tiles.stream().mapToInt(WorldPoint::getX).min().orElseThrow();
+        int minY = tiles.stream().mapToInt(WorldPoint::getY).min().orElseThrow();
+        int dx = point.getX() - minX;
+        int dy = point.getY() - minY;
+        if (dx < 0 || dx >= CRAB_RAVE_GRID_SIZE || dy < 0 || dy >= CRAB_RAVE_GRID_SIZE) return null;
+        return dy * CRAB_RAVE_GRID_SIZE + dx;
+    }
+
+    /** Which of the 64 Crab Rave cells are lit this CRAB_RAVE_LIGHT_PHASE_MS window, and each
+     * one's own color -- deterministic within a window (so it doesn't flicker frame to frame) via
+     * a Random seeded off the window's own index, reshuffling to a fresh random pattern every
+     * CRAB_RAVE_LIGHT_PHASE_MS. Purely a per-client cosmetic -- nothing here is shared with the
+     * server or any other client, same "zero gameplay consequence" reasoning
+     * CrabRaveNpcOverlay's own crab placement already relies on. */
+    private static Map<Integer, Color> computeCrabRaveLitColors()
+    {
+        long phase = System.currentTimeMillis() / CRAB_RAVE_LIGHT_PHASE_MS;
+        Random random = new Random(phase);
+
+        List<Integer> indices = new ArrayList<>();
+        for (int i = 0; i < CRAB_RAVE_GRID_SIZE * CRAB_RAVE_GRID_SIZE; i++) indices.add(i);
+        Collections.shuffle(indices, random);
+
+        Map<Integer, Color> lit = new HashMap<>();
+        for (int i = 0; i < CRAB_RAVE_LIT_TILE_COUNT && i < indices.size(); i++)
+        {
+            lit.put(indices.get(i), CRAB_RAVE_LIGHT_COLORS[random.nextInt(CRAB_RAVE_LIGHT_COLORS.length)]);
+        }
+        return lit;
     }
 
     /** Draws one Rainbow Rush tile -- unlike Turf Wars' fill-only tiles (renderTurfWarsTile), this

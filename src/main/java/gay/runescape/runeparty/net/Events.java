@@ -27,6 +27,7 @@ public final class Events
     public static final String COIN_RUSH_SPAWN = "COIN_RUSH_SPAWN";
     public static final String COIN_TRAP_TRIGGERED = "COIN_TRAP_TRIGGERED";
     public static final String COINS_CHANGED = "COINS_CHANGED";
+    public static final String CRAB_RAVE_RESULT_SUBMITTED = "CRAB_RAVE_RESULT_SUBMITTED";
     /** Echo of the client's own submit-ddr-result call -- same "already knows its own final
      * tally" reasoning as FISHING_CATCH_SUBMITTED's own doc just below. */
     public static final String DDR_RESULT_SUBMITTED = "DDR_RESULT_SUBMITTED";

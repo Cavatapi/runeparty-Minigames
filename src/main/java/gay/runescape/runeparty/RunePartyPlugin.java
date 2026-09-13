@@ -31,6 +31,7 @@ import gay.runescape.runeparty.overlays.AnnouncementOverlay;
 import gay.runescape.runeparty.overlays.ClickClickClickOverlay;
 import gay.runescape.runeparty.overlays.CoinRushScoreboardOverlay;
 import gay.runescape.runeparty.overlays.ConfettiOverlay;
+import gay.runescape.runeparty.overlays.CrabRaveNpcOverlay;
 import gay.runescape.runeparty.overlays.DanceDanceRuneScapeHudOverlay;
 import gay.runescape.runeparty.overlays.DanceDanceRuneScapeOverlay;
 import gay.runescape.runeparty.overlays.FishingCatchOverlay;
@@ -377,6 +378,37 @@ public class RunePartyPlugin extends Plugin
      * arrival-gated gather message Arena/Turf Wars/Sandwich Rush/Jaddy/Hot Potato/Dance, Dance,
      * RuneScape already use, and by {@link #MINIGAMES_NEEDING_PRE_ROUND_POSITION}. */
     public static final String REPEAT_AFTER_ME_KEY = "repeat-after-me";
+
+    /** Client-side key for the Crab Rave mini-game -- must match the server's own registration,
+     * same role every other {@code *_KEY} plays for its own mini-game. Unlike every arena-based
+     * mini-game above, this one never gates its own start on an arrival check (see
+     * minigames/crab_rave.py's own doc) -- players are meant to drop in and out of the dance floor
+     * freely while DANCE_DURATION_MS's own countdown runs, so it's never added to
+     * {@link #MINIGAMES_NEEDING_PRE_ROUND_POSITION}/{@link #MINIGAMES_NEEDING_CONTINUOUS_POSITION}
+     * either -- counting is entirely client-local, same "zero server visibility into position"
+     * category as Coin Rush/Click, Click, Click. */
+    public static final String CRAB_RAVE_KEY = "crab-rave";
+
+    /** How long Crab Rave's own dance-off runs for, once MINIGAME_ROUND_BEGIN fires -- matched
+     * exactly by the server's own DANCE_DURATION_SECONDS (minigames/crab_rave.py). */
+    public static final long CRAB_RAVE_DURATION_MS = 30_000;
+
+    /** How long, after the game starts, before the client's own "3...2...1...BEGIN!" cosmetic
+     * countdown even finishes for Crab Rave -- doesn't need to match the server's own
+     * START_DELAY_SECONDS exactly (ARCHITECTURE_REVIEW.md's X2(b)), since this mini-game's own
+     * roundStartAt is stamped from MINIGAME_ROUND_BEGIN's real arrival, not a guessed offset. Kept
+     * here only for symmetry/documentation with every other mini-game's own constant of the same
+     * shape -- nothing on the client actually reads it. */
+    public static final long CRAB_RAVE_START_DELAY_MS = 5_500;
+
+    // Model 56446 (see the client's own CrabRaveNpcOverlay) -- NPC composition, not a raw model
+    // id, so it's spawned via RunePartyRender.loadNpcModel(client, GEMSTONE_CRAB_NPC_ID), same
+    // "merge every composition part into one lit Model" shape JaddyDuelModel's own idle Jads use.
+    public static final int GEMSTONE_CRAB_NPC_ID = 14779;
+
+    // The Gemstone Crab's own idle loop -- per the user's own explicit pick, not the composition's
+    // own listed standingAnimation of 12480 (see CrabRaveNpcOverlay's own doc).
+    public static final int GEMSTONE_CRAB_IDLE_ANIMATION_ID = 12482;
 
     /** How long each light of Rainbow Rush's own "traffic light" get-ready sequence stays lit --
      * red, then orange, then green (see AnnouncementOverlay#renderRainbowRushTrafficLight) --
@@ -741,6 +773,7 @@ public class RunePartyPlugin extends Plugin
     private ConfettiOverlay confettiOverlay;
     private JadEncounter jadEncounter;
     private JaddyDuelModel jaddyDuelModel;
+    private CrabRaveNpcOverlay crabRaveNpcOverlay;
     private FishingCatchOverlay fishingCatchOverlay;
     private ClickClickClickOverlay clickClickClickOverlay;
     private HotPotatoOverlay hotPotatoOverlay;
@@ -1139,6 +1172,9 @@ public class RunePartyPlugin extends Plugin
         jaddyDuelModel = new JaddyDuelModel(client, clientThread, this, tileReducer);
         overlayManager.add(jaddyDuelModel);
 
+        crabRaveNpcOverlay = new CrabRaveNpcOverlay(client, this);
+        overlayManager.add(crabRaveNpcOverlay);
+
         fishingCatchOverlay = new FishingCatchOverlay(this);
         overlayManager.add(fishingCatchOverlay);
 
@@ -1202,6 +1238,7 @@ public class RunePartyPlugin extends Plugin
         if (confettiOverlay != null) overlayManager.remove(confettiOverlay);
         if (jadEncounter != null) { jadEncounter.clear(); overlayManager.remove(jadEncounter); }
         if (jaddyDuelModel != null) { jaddyDuelModel.clear(); overlayManager.remove(jaddyDuelModel); }
+        if (crabRaveNpcOverlay != null) { crabRaveNpcOverlay.clear(); overlayManager.remove(crabRaveNpcOverlay); }
         if (fishingCatchOverlay != null) overlayManager.remove(fishingCatchOverlay);
         if (clickClickClickOverlay != null) overlayManager.remove(clickClickClickOverlay);
         if (hotPotatoOverlay != null) overlayManager.remove(hotPotatoOverlay);
@@ -1988,6 +2025,21 @@ public class RunePartyPlugin extends Plugin
         return points;
     }
 
+    /** Every currently-marked Crab Rave arena tile, if the board's actually swapped to it -- see
+     * CrabRavePresentation#onDanceFinished (bounding-box "am I in the zone" check) and
+     * CrabRaveNpcOverlay (crab spawn-point placement), the only readers. Same "the reducer is the
+     * one source of truth," scanned-on-demand-rather-than-cached shape
+     * findRepeatAfterMeTilePoints/findDanceDanceRuneScapeTilePoint already follow. */
+    public List<WorldPoint> findCrabRaveTilePoints()
+    {
+        List<WorldPoint> points = new ArrayList<>();
+        for (TileReducer.TileEntry entry : tileReducer.snapshot())
+        {
+            if ("CRAB_RAVE_TILE".equals(entry.tileType)) points.add(entry.point);
+        }
+        return points;
+    }
+
     /** Rolls one Fishing Contest catch -- called from onAnimationChanged the moment the local
      * player's own Headbang emote finishes (see awaitingHeadbangFinish). Re-checks
      * isFishingContestActive()/fishingCatchSubmitted here on top of onAnimationChanged's own gate
@@ -2158,6 +2210,15 @@ public class RunePartyPlugin extends Plugin
         if (isRepeatAfterMeActive())
         {
             minigamePresentation.repeatAfterMe().onTick(selfPlayer);
+        }
+
+        // Also independent of the turn engine below -- Crab Rave's own fixed 30-second clock and
+        // one-shot end-of-round submission both live inside this one call (see
+        // CrabRavePresentation#onTick); the actual per-dance scoring happens separately, from
+        // onAnimationChanged's own EMOTE_DANCE case, not from this per-tick call.
+        if (isCrabRaveActive())
+        {
+            minigamePresentation.crabRave().onTick(selfPlayer);
         }
 
         // Also independent of the turn engine below -- unlike a rolled destination (pendingRoll,
@@ -2343,6 +2404,13 @@ public class RunePartyPlugin extends Plugin
             return;
         }
 
+        if (anim == AnimationID.EMOTE_DANCE)
+        {
+            if (!isLocalPlayerCrabRaveDanceEligible()) return;
+            minigamePresentation.crabRave().armAwaitingDanceFinish();
+            return;
+        }
+
         if (awaitingSpinFinish)
         {
             awaitingSpinFinish = false;
@@ -2382,6 +2450,11 @@ public class RunePartyPlugin extends Plugin
         {
             minigamePresentation.repeatAfterMe().clearAwaitingSpinFinish();
             minigamePresentation.repeatAfterMe().onSpinFinished(localPlayer.getWorldLocation());
+        }
+        else if (minigamePresentation.crabRave().isAwaitingDanceFinish())
+        {
+            minigamePresentation.crabRave().clearAwaitingDanceFinish();
+            minigamePresentation.crabRave().onDanceFinished(localPlayer.getWorldLocation());
         }
     }
 
@@ -2520,6 +2593,17 @@ public class RunePartyPlugin extends Plugin
     {
         if (!REPEAT_AFTER_ME_KEY.equals(minigamePresentation.getKey()) || !isMinigamePlayable()) return false;
         return minigamePresentation.repeatAfterMe().isChallengeActive();
+    }
+
+    /** Whether a Dance emote right now would actually score a Crab Rave point -- the round's
+     * begun, before its own 30-second deadline, and not already submitted (see
+     * CrabRavePresentation#isDanceEligible, which does the real work; whether the local player is
+     * actually standing inside the arena is checked separately, by onDanceFinished itself, once
+     * the emote finishes). See onAnimationChanged's own EMOTE_DANCE case, the only caller. */
+    public boolean isLocalPlayerCrabRaveDanceEligible()
+    {
+        if (!CRAB_RAVE_KEY.equals(minigamePresentation.getKey()) || !isMinigamePlayable()) return false;
+        return minigamePresentation.crabRave().isDanceEligible();
     }
 
     /** Whether {@code localPlayer} is standing on {@code rsn}'s tracked board position -- see
@@ -3660,6 +3744,14 @@ public class RunePartyPlugin extends Plugin
     /** Whether this round's own green/red reveal should be showing -- see RepeatAfterMePresentation#isRevealActive. */
     public boolean isRepeatAfterMeRevealActive() { return minigamePresentation.repeatAfterMe().isRevealActive(); }
     public int getRepeatAfterMeRoundNumber() { return minigamePresentation.repeatAfterMe().getRoundNumber(); }
+
+    public boolean isCrabRaveActive() { return minigamePresentation.isKeyActive(CRAB_RAVE_KEY); }
+    /** When the current Crab Rave round's own 30-second clock runs out -- 0 if no round is active
+     * yet or the round hasn't actually begun. Drives AnnouncementOverlay's own countdown number. */
+    public long getCrabRaveEndsAt() { return minigamePresentation.crabRave().getEndsAt(); }
+    /** The local player's own running dance tally this round -- client-local only, nobody but the
+     * local player ever sees this before the end-of-round Final Score recap. */
+    public int getCrabRaveDanceCount() { return minigamePresentation.crabRave().getDanceCount(); }
     /** Whether the local player has personally stood on the course tile at {@code pathIndex} yet
      * this round -- see TileOverlay#renderRainbowRushTile, the only consumer: outline-only until
      * this flips true, filled solid after. */

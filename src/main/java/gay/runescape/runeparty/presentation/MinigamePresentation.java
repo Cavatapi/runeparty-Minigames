@@ -12,6 +12,7 @@ import gay.runescape.runeparty.net.MinigameScore;
 import com.google.gson.JsonObject;
 import gay.runescape.runeparty.minigames.ClickClickClickPresentation;
 import gay.runescape.runeparty.minigames.CoinRushPresentation;
+import gay.runescape.runeparty.minigames.CrabRavePresentation;
 import gay.runescape.runeparty.minigames.DanceDanceRuneScapePresentation;
 import gay.runescape.runeparty.minigames.FishingContestPresentation;
 import gay.runescape.runeparty.minigames.HotPotatoPresentation;
@@ -120,6 +121,7 @@ public final class MinigamePresentation
     private final DanceDanceRuneScapePresentation danceDanceRuneScape;
     private final RainbowRushPresentation rainbowRush;
     private final RepeatAfterMePresentation repeatAfterMe;
+    private final CrabRavePresentation crabRave;
     // Every feature above, keyed by its own RunePartyPlugin.*_KEY, for generic dispatch (apply's
     // default branch, onStarted/onRoundBegin/onEnded/showsFinalScore/reset) -- Arena has no entry
     // at all, since it has no client-tracked state of its own beyond this class's own generic
@@ -140,6 +142,7 @@ public final class MinigamePresentation
         this.danceDanceRuneScape = new DanceDanceRuneScapePresentation(plugin);
         this.rainbowRush = new RainbowRushPresentation(plugin);
         this.repeatAfterMe = new RepeatAfterMePresentation(plugin);
+        this.crabRave = new CrabRavePresentation(plugin);
 
         features.put(RunePartyPlugin.COIN_RUSH_KEY, coinRush);
         features.put(RunePartyPlugin.SANDWICH_RUSH_KEY, sandwichRush);
@@ -152,6 +155,7 @@ public final class MinigamePresentation
         features.put(RunePartyPlugin.DANCE_DANCE_RUNESCAPE_KEY, danceDanceRuneScape);
         features.put(RunePartyPlugin.RAINBOW_RUSH_KEY, rainbowRush);
         features.put(RunePartyPlugin.REPEAT_AFTER_ME_KEY, repeatAfterMe);
+        features.put(RunePartyPlugin.CRAB_RAVE_KEY, crabRave);
     }
 
     public void apply(ApiClient.EventOut e, boolean catchingUp)
@@ -469,4 +473,5 @@ public final class MinigamePresentation
     public DanceDanceRuneScapePresentation danceDanceRuneScape() { return danceDanceRuneScape; }
     public RainbowRushPresentation rainbowRush() { return rainbowRush; }
     public RepeatAfterMePresentation repeatAfterMe() { return repeatAfterMe; }
+    public CrabRavePresentation crabRave() { return crabRave; }
 }

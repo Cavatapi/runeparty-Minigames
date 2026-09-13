@@ -293,6 +293,7 @@ public class AnnouncementOverlay extends Overlay
         renderRainbowRushTrafficLight(g);
         renderTrueOrFalseReveal(g);
         renderTrueOrFalseQuestion(g);
+        renderCrabRaveCountdown(g);
         renderMinigameOverBanner(g);
         renderMinigameScoreBanner(g);
         renderMinigameRewardsBanner(g);
@@ -1501,6 +1502,31 @@ public class AnnouncementOverlay extends Overlay
             entry -> answered.contains(entry.rsn.toLowerCase()) ? "   Answered!" : "   Waiting...",
             entry -> answered.contains(entry.rsn.toLowerCase()) ? MINIGAME_REWARDS_COLOR : MINIGAME_REWARDS_NONE_COLOR,
             centerX, emoteY + 36, ROUND_COMPLETE_LINE_HEIGHT, 1f);
+    }
+
+    /** Crab Rave's own big centered countdown, ticking down from getCrabRaveEndsAt() -- same
+     * secondsLeft math renderTrueOrFalseQuestion's own countdown number already uses. Shown for
+     * the whole round (no separate "get ready" phase -- the round begins on the standard
+     * "3...2...1...BEGIN!" spinner, not an arrival gate, see minigames/crab_rave.py's own doc), and
+     * stops the instant the clock actually runs out rather than lingering into the reveal. */
+    private void renderCrabRaveCountdown(Graphics2D g)
+    {
+        if (!plugin.isCrabRaveActive()) return;
+        long endsAt = plugin.getCrabRaveEndsAt();
+        if (endsAt == 0) return;
+
+        long now = System.currentTimeMillis();
+        if (now >= endsAt) return;
+
+        int centerX = client.getCanvasWidth() / 2;
+        int y = client.getCanvasHeight() / 3;
+
+        g.setFont(FontManager.getRunescapeBoldFont().deriveFont(GOLDEN_GNOME_OFFER_SUBTITLE_SIZE));
+        drawCenteredText(g, "Do the Dance emote on the dance floor!", centerX, y, Color.WHITE, 1f);
+
+        int secondsLeft = (int) Math.max(0, Math.ceil((endsAt - now) / 1000.0));
+        g.setFont(MARIO_PARTY_FONT.deriveFont(TRUE_OR_FALSE_COUNTDOWN_SIZE));
+        drawCenteredText(g, String.valueOf(secondsLeft), centerX, y + 40, TRUE_OR_FALSE_COUNTDOWN_COLOR, 1f);
     }
 
     /** Draws the previous True or False round's reveal -- the correct answer, plus every player's
