@@ -41,6 +41,7 @@ import gay.runescape.runeparty.overlays.HotPotatoOverlay;
 import gay.runescape.runeparty.overlays.JadEncounter;
 import gay.runescape.runeparty.overlays.JaddyDuelModel;
 import gay.runescape.runeparty.overlays.PlayerOverlay;
+import gay.runescape.runeparty.overlays.PlayerTransformOverlay;
 import gay.runescape.runeparty.overlays.RunePartyMapOverlay;
 import gay.runescape.runeparty.overlays.SandwichRushHudOverlay;
 import gay.runescape.runeparty.overlays.StatsOverlay;
@@ -410,6 +411,34 @@ public class RunePartyPlugin extends Plugin
     // not the crab's own listed standingAnimation of 12480 (see CrabRaveNpcOverlay's own doc)
     public static final int GEMSTONE_CRAB_IDLE_ANIMATION_ID = 12483;
 
+    /** Client-side key for Brutus Attack -- must match the server's own registration
+     * (minigames/brutus_attack.py). One random seated player is transformed into Brutus -- a real
+     * NPC model rendered on a real Player, via PlayerComposition#setTransformedNpcId (see
+     * overlays/PlayerTransformOverlay, the only consumer) -- for the whole round; everyone else has
+     * to reach the far end of a 12x3 arena before Brutus can dash across and crash into them (see
+     * brutus_attack.py's own doc). Deliberately NOT added to {@link #MINIGAMES_NEEDING_CONTINUOUS_POSITION}/
+     * {@link #MINIGAMES_NEEDING_PRE_ROUND_POSITION} -- unlike Arena/Turf Wars/Jaddy, this
+     * mini-game needs no live position feed from the server's own poll loop at all; each client
+     * instead watches its own position locally and fires a one-shot confirm-brutus-arrival/
+     * confirm-brutus-dash report only at the moment it actually matters (see
+     * BrutusAttackPresentation#onTick).
+     * <p>
+     * Same hex values as the server's own brutus_attack.py BRUTUS_ZONE_COLOR/TARGET_ZONE_COLOR --
+     * kept in sync by hand, same convention Turf Wars' own team colors already use. */
+    public static final String BRUTUS_ATTACK_KEY = "brutus-attack";
+    public static final String BRUTUS_ZONE_COLOR_HEX = "#CC2222";
+    public static final String BRUTUS_TARGET_ZONE_COLOR_HEX = "#2266CC";
+
+    /** Brutus's own transformed model renders noticeably larger than the single real tile his
+     * underlying Player object actually occupies (PlayerComposition#setTransformedNpcId only swaps
+     * what model draws at his own true WorldLocation, see PlayerTransformOverlay's own doc) --
+     * observed in-game to render roughly a 1x3 footprint (1 tile wide, 3 tiles long, centered on
+     * his own true tile), long axis matched up with the corridor's own direction of travel. Used by
+     * {@link #isLocalPlayerHitByBrutusDash}, which every other seated client calls on itself the
+     * instant it receives Brutus's own broadcasted dash-landing report -- the elimination decision
+     * lives entirely here now, not on the server (see minigames/brutus_attack.py's own doc). */
+    public static final int BRUTUS_HITBOX_RADIUS_TILES = 1;
+
     /** How long each light of Rainbow Rush's own "traffic light" get-ready sequence stays lit --
      * red, then orange, then green (see AnnouncementOverlay#renderRainbowRushTrafficLight) --
      * purely a client-local animation, timed off MINIGAME_ROUND_BEGIN's own arrival timestamp
@@ -775,6 +804,7 @@ public class RunePartyPlugin extends Plugin
     private JaddyDuelModel jaddyDuelModel;
     private CrabRaveNpcOverlay crabRaveNpcOverlay;
     private CrabRaveHudOverlay crabRaveHudOverlay;
+    private PlayerTransformOverlay playerTransformOverlay;
     private FishingCatchOverlay fishingCatchOverlay;
     private ClickClickClickOverlay clickClickClickOverlay;
     private HotPotatoOverlay hotPotatoOverlay;
@@ -1179,6 +1209,9 @@ public class RunePartyPlugin extends Plugin
         crabRaveHudOverlay = new CrabRaveHudOverlay(this);
         overlayManager.add(crabRaveHudOverlay);
 
+        playerTransformOverlay = new PlayerTransformOverlay(client, this);
+        overlayManager.add(playerTransformOverlay);
+
         fishingCatchOverlay = new FishingCatchOverlay(this);
         overlayManager.add(fishingCatchOverlay);
 
@@ -1244,6 +1277,7 @@ public class RunePartyPlugin extends Plugin
         if (jaddyDuelModel != null) { jaddyDuelModel.clear(); overlayManager.remove(jaddyDuelModel); }
         if (crabRaveNpcOverlay != null) { crabRaveNpcOverlay.clear(); overlayManager.remove(crabRaveNpcOverlay); }
         if (crabRaveHudOverlay != null) overlayManager.remove(crabRaveHudOverlay);
+        if (playerTransformOverlay != null) { playerTransformOverlay.clear(); overlayManager.remove(playerTransformOverlay); }
         if (fishingCatchOverlay != null) overlayManager.remove(fishingCatchOverlay);
         if (clickClickClickOverlay != null) overlayManager.remove(clickClickClickOverlay);
         if (hotPotatoOverlay != null) overlayManager.remove(hotPotatoOverlay);
@@ -2045,6 +2079,51 @@ public class RunePartyPlugin extends Plugin
         return points;
     }
 
+    /** Every currently-marked Brutus Attack tile colored as Brutus's own zone (red) -- see
+     * BrutusAttackPresentation#onTick, the only reader: the local client checks its own position
+     * against this list to decide when to fire its own one-shot confirm-brutus-arrival report.
+     * Same "the reducer is the one source of truth," scanned-on-demand shape
+     * findCrabRaveTilePoints/findRepeatAfterMeTilePoints already follow -- just filtered by color
+     * on top of tileType, since every Brutus Attack tile shares one type but differs by zone. */
+    public List<WorldPoint> findBrutusZoneTiles()
+    {
+        List<WorldPoint> points = new ArrayList<>();
+        for (TileReducer.TileEntry entry : tileReducer.snapshot())
+        {
+            if ("BRUTUS_ATTACK_TILE".equals(entry.tileType) && BRUTUS_ZONE_COLOR_HEX.equalsIgnoreCase(entry.color)) points.add(entry.point);
+        }
+        return points;
+    }
+
+    /** Every currently-marked Brutus Attack tile colored as the targets' own zone (blue) -- see
+     * findBrutusZoneTiles' own doc for the shape this mirrors. Read both by every non-Brutus
+     * client (to confirm their own arrival) and by whichever client is Brutus (to confirm a dash
+     * landing). */
+    public List<WorldPoint> findBrutusTargetZoneTiles()
+    {
+        List<WorldPoint> points = new ArrayList<>();
+        for (TileReducer.TileEntry entry : tileReducer.snapshot())
+        {
+            if ("BRUTUS_ATTACK_TILE".equals(entry.tileType) && BRUTUS_TARGET_ZONE_COLOR_HEX.equalsIgnoreCase(entry.color)) points.add(entry.point);
+        }
+        return points;
+    }
+
+    /** Every currently-marked Brutus Attack tile regardless of zone color -- Brutus's own red zone,
+     * the neutral white corridor, and the targets' blue zone combined, i.e. the whole arena. See
+     * BrutusAttackPresentation#onTick, the only reader: the locally-assigned Brutus checks his own
+     * position against this set once the round is actually active, and self-reports
+     * confirmBrutusOutOfBounds the instant he's standing on none of them. */
+    public List<WorldPoint> findBrutusAttackArenaTiles()
+    {
+        List<WorldPoint> points = new ArrayList<>();
+        for (TileReducer.TileEntry entry : tileReducer.snapshot())
+        {
+            if ("BRUTUS_ATTACK_TILE".equals(entry.tileType)) points.add(entry.point);
+        }
+        return points;
+    }
+
     /** Rolls one Fishing Contest catch -- called from onAnimationChanged the moment the local
      * player's own Headbang emote finishes (see awaitingHeadbangFinish). Re-checks
      * isFishingContestActive()/fishingCatchSubmitted here on top of onAnimationChanged's own gate
@@ -2224,6 +2303,17 @@ public class RunePartyPlugin extends Plugin
         if (isCrabRaveActive())
         {
             minigamePresentation.crabRave().onTick(selfPlayer);
+        }
+
+        // Also independent of the turn engine below -- Brutus Attack's own one-shot
+        // confirm-brutus-arrival/confirm-brutus-dash reports both live inside this one call (see
+        // BrutusAttackPresentation#onTick), replacing what a continuous position-ping mini-game
+        // would otherwise need from onGameTick's own position-heartbeat check above -- this
+        // mini-game is deliberately NOT in MINIGAMES_NEEDING_CONTINUOUS_POSITION/
+        // _PRE_ROUND_POSITION at all (see BRUTUS_ATTACK_KEY's own doc).
+        if (isBrutusAttackActive())
+        {
+            minigamePresentation.brutusAttack().onTick(selfPlayer);
         }
 
         // Also independent of the turn engine below -- unlike a rolled destination (pendingRoll,
@@ -3280,6 +3370,25 @@ public class RunePartyPlugin extends Plugin
                 break;
             }
 
+            case Events.BRUTUS_PLAYER_ELIMINATED:
+            {
+                // minigamePresentation.apply folds the elimination itself (eliminatedRsns)
+                // unconditionally -- real state, needed immediately even for a catching-up client
+                // so PlayerOverlay's own skull indicator is correct from the first frame, same
+                // shape HOT_POTATO_EXPLODED's own case above uses. No spotanim of its own -- a
+                // chat message is enough of a one-shot reveal for this one.
+                minigamePresentation.apply(e, catchingUp);
+                if (!catchingUp)
+                {
+                    String eliminatedRsn = Json.requiredStr(e.payload, type, "player");
+                    if (eliminatedRsn != null)
+                    {
+                        addChatMessage("Brutus crashed into " + eliminatedRsn + "! They're eliminated from this round.");
+                    }
+                }
+                break;
+            }
+
             case Events.GOLDEN_GNOME_MOVED:
             {
                 goldenGnomePresentation.apply(e, catchingUp);
@@ -3400,6 +3509,11 @@ public class RunePartyPlugin extends Plugin
             case Events.MINIGAME_TEAMS_ASSIGNED:
             case Events.HOT_POTATO_ASSIGNED:
             case Events.REPEAT_AFTER_ME_ROUND_STARTED:
+            case Events.PLAYER_TRANSFORMED:
+            case Events.BRUTUS_ROUND_STARTED:
+            case Events.BRUTUS_ARRIVAL_PENDING:
+            case Events.BRUTUS_DASH_MISSED:
+            case Events.BRUTUS_DASH_REPORTED:
             {
                 if (Events.MINIGAME_STARTED.equals(type))
                 {
@@ -3757,6 +3871,64 @@ public class RunePartyPlugin extends Plugin
     /** The local player's own running dance tally this round -- client-local only, nobody but the
      * local player ever sees this before the end-of-round Final Score recap. */
     public int getCrabRaveDanceCount() { return minigamePresentation.crabRave().getDanceCount(); }
+
+    public boolean isBrutusAttackActive() { return minigamePresentation.isKeyActive(BRUTUS_ATTACK_KEY); }
+    /** The rsn currently transformed into Brutus for this round -- null before PLAYER_TRANSFORMED
+     * lands. See overlays/PlayerTransformOverlay, the only consumer. */
+    public String getBrutusAttackBrutusRsn() { return minigamePresentation.brutusAttack().getBrutusRsn(); }
+    public int getBrutusAttackNpcId() { return minigamePresentation.brutusAttack().getNpcId(); }
+    public int getBrutusAttackIdleAnimationId() { return minigamePresentation.brutusAttack().getIdleAnimationId(); }
+    public int getBrutusAttackWalkAnimationId() { return minigamePresentation.brutusAttack().getWalkAnimationId(); }
+    public int getBrutusAttackRoundNumber() { return minigamePresentation.brutusAttack().getRoundNumber(); }
+    /** Lowercase rsns eliminated so far this mini-game -- see PlayerOverlay's own reuse of Hot
+     * Potato's skull indicator, the only consumer. */
+    public Set<String> getBrutusAttackEliminatedRsns() { return minigamePresentation.brutusAttack().getEliminatedRsns(); }
+    /** When the current round's own 10-second dash window closes -- 0 if no round is active yet.
+     * Drives AnnouncementOverlay's own dash countdown banner. */
+    public long getBrutusAttackDashEndsAt() { return minigamePresentation.brutusAttack().getDashEndsAt(); }
+    /** Whether the current round's own outcome (hit or miss) has already landed -- see that
+     * method's own doc. AnnouncementOverlay's own dash countdown checks this so the numeral
+     * disappears the instant the round resolves, rather than always counting down to 0. */
+    public boolean isBrutusAttackDashResolvedThisRound() { return minigamePresentation.brutusAttack().isDashResolvedThisRound(); }
+    /** Whether Brutus's own dash has landed for the current round, whether or not its outcome is
+     * known yet -- see that method's own doc. AnnouncementOverlay's own dash countdown checks this
+     * too, so the numeral disappears the instant Brutus physically enters the zone rather than
+     * continuing to count down through the server's own brief post-dash grace period. */
+    public boolean isBrutusAttackDashLandedThisRound() { return minigamePresentation.brutusAttack().isDashLandedThisRound(); }
+    /** The exact tiles that would eliminate a target standing on them for the CURRENT round's own
+     * dash -- empty unless isBrutusAttackDashLandedThisRound() is true. Same row/plane as Brutus's
+     * own reported landing tile, within BRUTUS_HITBOX_RADIUS_TILES of it in x -- the identical span
+     * isLocalPlayerHitByBrutusDash itself checks against, just enumerated here instead of tested
+     * against a single point, so TileOverlay can highlight exactly which tiles counted as the
+     * "crash zone" for that dash. */
+    public List<WorldPoint> getBrutusAttackCrashZoneTiles()
+    {
+        WorldPoint landed = minigamePresentation.brutusAttack().getDashLandedPosition();
+        if (landed == null) return Collections.emptyList();
+
+        List<WorldPoint> tiles = new ArrayList<>();
+        for (int dx = -BRUTUS_HITBOX_RADIUS_TILES; dx <= BRUTUS_HITBOX_RADIUS_TILES; dx++)
+        {
+            tiles.add(new WorldPoint(landed.getX() + dx, landed.getY(), landed.getPlane()));
+        }
+        return tiles;
+    }
+    /** When the current "HIT!"/"MISS!" flash should disappear -- 0 if none is armed. Drives
+     * AnnouncementOverlay's own renderBrutusAttackDashResult. */
+    public long getBrutusAttackDashResultBannerUntil() { return minigamePresentation.brutusAttack().getDashResultBannerUntil(); }
+    /** Whether the most recent dash resolved as a hit ("HIT!") or a miss ("MISS!") -- only
+     * meaningful while getBrutusAttackDashResultBannerUntil() hasn't passed yet. */
+    public boolean isBrutusAttackDashResultHit() { return minigamePresentation.brutusAttack().isDashResultHit(); }
+    /** Whether the local player is the one currently transformed into Brutus this round -- see
+     * AnnouncementOverlay's own role-aware "head to your zone"/"head to the target zone" gather
+     * message. */
+    public boolean isLocalPlayerAssignedBrutus()
+    {
+        String brutusRsn = getBrutusAttackBrutusRsn();
+        String self = getLocalRsn();
+        return brutusRsn != null && self != null && brutusRsn.equalsIgnoreCase(self);
+    }
+
     /** Whether the local player has personally stood on the course tile at {@code pathIndex} yet
      * this round -- see TileOverlay#renderRainbowRushTile, the only consumer: outline-only until
      * this flips true, filled solid after. */
@@ -3850,6 +4022,21 @@ public class RunePartyPlugin extends Plugin
     public String getLocalJaddyZoneColorHex()
     {
         return getJaddyZoneColorHex(lastKnownLocalPosition);
+    }
+
+    /** Whether the LOCAL player's own current position falls within BRUTUS_HITBOX_RADIUS_TILES of
+     * Brutus's own reported dash-landing tile (same row, same plane) -- see
+     * BrutusAttackPresentation#apply, the only caller, which fires confirmBrutusElimination the
+     * instant this returns true. Reads lastKnownLocalPosition (cached once per tick from
+     * onGameTick, the client thread) rather than calling Player#getWorldLocation() directly, same
+     * reasoning getLocalJaddyZoneColorHex's own doc gives -- this is called from handleEvent, which
+     * runs on EventSocket's own WebSocket callback thread, not the client thread. */
+    public boolean isLocalPlayerHitByBrutusDash(int brutusX, int brutusY, int brutusPlane)
+    {
+        WorldPoint pos = lastKnownLocalPosition;
+        if (pos == null) return false;
+        return pos.getY() == brutusY && pos.getPlane() == brutusPlane
+            && Math.abs(pos.getX() - brutusX) <= BRUTUS_HITBOX_RADIUS_TILES;
     }
 
     public String getTrueOrFalseQuestion() { return minigamePresentation.trueOrFalse().getQuestion(); }

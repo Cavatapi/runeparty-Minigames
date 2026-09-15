@@ -279,7 +279,16 @@ public class AnnouncementOverlay extends Overlay
         renderMinigameReadyCheck(g);
         renderTeamAssignedBanner(g);
         renderJaddyResolvedBanner(g);
-        if (RunePartyPlugin.ARENA_KEY.equals(plugin.getMinigameKey()) || RunePartyPlugin.TURF_WARS_KEY.equals(plugin.getMinigameKey())
+        if (RunePartyPlugin.BRUTUS_ATTACK_KEY.equals(plugin.getMinigameKey()))
+        {
+            // Bespoke, not folded into the generic arrival-gather list below: Brutus Attack needs
+            // a fresh gather message before EACH of its own 3 rounds (players have to walk back
+            // to their zone every round), not just once before the whole mini-game's first round
+            // -- see renderBrutusAttackGatherMessage's own doc for why isMinigameRoundBegun()'s
+            // one-shot latch (every other arena mini-game's own hide condition) doesn't fit here.
+            renderBrutusAttackGatherMessage(g);
+        }
+        else if (RunePartyPlugin.ARENA_KEY.equals(plugin.getMinigameKey()) || RunePartyPlugin.TURF_WARS_KEY.equals(plugin.getMinigameKey())
             || RunePartyPlugin.SANDWICH_RUSH_KEY.equals(plugin.getMinigameKey()) || RunePartyPlugin.JADDY_KEY.equals(plugin.getMinigameKey())
             || RunePartyPlugin.HOT_POTATO_KEY.equals(plugin.getMinigameKey()) || RunePartyPlugin.DANCE_DANCE_RUNESCAPE_KEY.equals(plugin.getMinigameKey())
             || RunePartyPlugin.RAINBOW_RUSH_KEY.equals(plugin.getMinigameKey()) || RunePartyPlugin.REPEAT_AFTER_ME_KEY.equals(plugin.getMinigameKey()))
@@ -294,6 +303,8 @@ public class AnnouncementOverlay extends Overlay
         renderTrueOrFalseReveal(g);
         renderTrueOrFalseQuestion(g);
         renderCrabRaveCountdown(g);
+        renderBrutusAttackDashCountdown(g);
+        renderBrutusAttackDashResult(g);
         renderMinigameOverBanner(g);
         renderMinigameScoreBanner(g);
         renderMinigameRewardsBanner(g);
@@ -1528,6 +1539,85 @@ public class AnnouncementOverlay extends Overlay
         int secondsLeft = (int) Math.max(0, Math.ceil((endsAt - now) / 1000.0));
         g.setFont(MARIO_PARTY_FONT.deriveFont(TRUE_OR_FALSE_COUNTDOWN_SIZE));
         drawCenteredText(g, String.valueOf(secondsLeft), centerX, y, TRUE_OR_FALSE_COUNTDOWN_COLOR, 1f);
+    }
+
+    /** Brutus Attack's own role-aware replacement for renderArrivalGatherMessage -- shown before
+     * EACH of its 3 rounds, not just the mini-game's first, since every round needs Brutus and
+     * every surviving target to walk back to their own zone (see brutus_attack.py's own doc).
+     * isMinigameRoundBegun() (every other arena mini-game's own hide condition) is a one-shot
+     * latch for the whole mini-game instance, so it can't tell rounds 2/3 apart from round 1 --
+     * this instead hides only while a dash is actually live right now (getBrutusAttackDashEndsAt
+     * in the future), reappearing the instant that window closes, whether by a catch, a miss, or
+     * the clock running out. A caught-early round (Brutus lands a hit well before the full 10
+     * seconds elapse) can leave this hidden a few seconds longer than ideal, since dashEndsAt
+     * itself doesn't move up early -- a minor cosmetic gap, not worth a dedicated "round resolved"
+     * server signal just for this banner's own timing. */
+    private void renderBrutusAttackGatherMessage(Graphics2D g)
+    {
+        boolean countdownRevealed = plugin.isMinigameCountdownStarted()
+            && (plugin.isMinigameCountdownSkippedForClient() || plugin.getMinigameCountdownBannerUntil() != 0);
+        if (!countdownRevealed) return;
+
+        long now = System.currentTimeMillis();
+        long dashEndsAt = plugin.getBrutusAttackDashEndsAt();
+        if (dashEndsAt != 0 && now < dashEndsAt) return;
+
+        float alpha = MINIGAME_READY_CHECK_MIN_ALPHA + (1f - MINIGAME_READY_CHECK_MIN_ALPHA) * BannerAnim.pulse(now, MINIGAME_READY_CHECK_PULSE_PERIOD_MS);
+        int centerX = client.getCanvasWidth() / 2;
+        int y = client.getCanvasHeight() / 2;
+
+        String text = plugin.isLocalPlayerAssignedBrutus()
+            ? "Head to your own zone (red)!"
+            : "Head to the target zone (blue)!";
+
+        g.setFont(FontManager.getRunescapeBoldFont().deriveFont(GOLDEN_GNOME_OFFER_SUBTITLE_SIZE));
+        drawCenteredText(g, text, centerX, y, Color.WHITE, alpha);
+    }
+
+    /** Brutus Attack's own big centered countdown for the current round's 10-second dash window,
+     * same secondsLeft math renderCrabRaveCountdown's own countdown number already uses. Hidden as
+     * soon as either becomes true: isBrutusAttackDashLandedThisRound (Brutus's own dash has
+     * landed -- the moment that actually mattered has already happened, even though the server
+     * itself still waits out a brief grace period afterward for a target's own independent
+     * elimination self-report before the round's outcome is actually known) or
+     * isBrutusAttackDashResolvedThisRound (the round's outcome landed even without a dash ever
+     * being reported -- Brutus simply never entered the zone before the clock ran out). Reappears
+     * once the next round's own arrival gate re-stamps getBrutusAttackDashEndsAt. */
+    private void renderBrutusAttackDashCountdown(Graphics2D g)
+    {
+        if (!plugin.isBrutusAttackActive()) return;
+        if (plugin.isBrutusAttackDashLandedThisRound() || plugin.isBrutusAttackDashResolvedThisRound()) return;
+        long endsAt = plugin.getBrutusAttackDashEndsAt();
+        if (endsAt == 0) return;
+
+        long now = System.currentTimeMillis();
+        if (now >= endsAt) return;
+
+        int centerX = client.getCanvasWidth() / 2;
+        int y = client.getCanvasHeight() / 3;
+
+        int secondsLeft = (int) Math.max(0, Math.ceil((endsAt - now) / 1000.0));
+        g.setFont(MARIO_PARTY_FONT.deriveFont(TRUE_OR_FALSE_COUNTDOWN_SIZE));
+        drawCenteredText(g, String.valueOf(secondsLeft), centerX, y, TRUE_OR_FALSE_COUNTDOWN_COLOR, 1f);
+    }
+
+    /** Brutus Attack's own "HIT!"/"MISS!" flash -- fires once per resolved dash (a catch or a
+     * miss), same Mario Party rainbow-letter treatment "MINIGAME!"/"GAME OVER!" already use (see
+     * renderMinigameBanner). Shown at the same spot the dash countdown (renderBrutusAttackDashCountdown)
+     * just was -- the two never overlap, since the countdown hides the instant the dash resolves,
+     * right when this one arms. */
+    private void renderBrutusAttackDashResult(Graphics2D g)
+    {
+        if (!plugin.isBrutusAttackActive()) return;
+        Float alpha = BannerAnim.fadeAlpha(plugin.getBrutusAttackDashResultBannerUntil(), DEFAULT_FADE_MS);
+        if (alpha == null) return;
+
+        int centerX = client.getCanvasWidth() / 2;
+        int y = client.getCanvasHeight() / 3;
+
+        String text = plugin.isBrutusAttackDashResultHit() ? "HIT!" : "MISS!";
+        g.setFont(MARIO_PARTY_FONT.deriveFont(MINIGAME_TITLE_SIZE));
+        drawCenteredRainbowText(g, text, RAINBOW_LETTER_COLORS, centerX, y, alpha);
     }
 
     /** Draws the previous True or False round's reveal -- the correct answer, plus every player's

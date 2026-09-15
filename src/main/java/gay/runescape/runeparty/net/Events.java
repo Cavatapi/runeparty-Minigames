@@ -19,6 +19,43 @@ public final class Events
     /** Server-only bookkeeping fired when a player is eliminated from the Arena. Never dispatched
      * on by any handler here -- an eliminated player just doesn't get paid at the end. */
     public static final String ARENA_PLAYER_ELIMINATED = "ARENA_PLAYER_ELIMINATED";
+    /** Server-only echo of this client's (or another seated player's) own one-shot
+     * confirm-brutus-arrival call -- never dispatched on here, the server's own arrival gate is
+     * what actually reacts to it (see minigames/brutus_attack.py). */
+    public static final String BRUTUS_ARRIVAL_CONFIRMED = "BRUTUS_ARRIVAL_CONFIRMED";
+    /** Resets BrutusAttackPresentation's own one-shot "have I already confirmed arrival/reported a
+     * dash this round" guards -- fires right before each of Brutus Attack's 3 rounds begins
+     * gathering (round 1's fires before the arena's own board swap even lands, see
+     * minigames/brutus_attack.py's own doc), so a client re-confirms fresh every round even if it
+     * never physically moved. */
+    public static final String BRUTUS_ARRIVAL_PENDING = "BRUTUS_ARRIVAL_PENDING";
+    /** Fires once whenever a Brutus Attack round's own dash window resolves with nobody caught --
+     * see BrutusAttackPresentation, which folds this into a "MISS!" flash (the counterpart to
+     * BRUTUS_PLAYER_ELIMINATED's own "HIT!" flash). */
+    public static final String BRUTUS_DASH_MISSED = "BRUTUS_DASH_MISSED";
+    /** Server-only echo of Brutus's own one-shot confirm-brutus-dash call -- never dispatched on
+     * here; BRUTUS_PLAYER_ELIMINATED is the one that actually reveals the outcome. */
+    public static final String BRUTUS_DASH_REPORTED = "BRUTUS_DASH_REPORTED";
+    /** Server-only echo of Brutus's own one-shot confirm-brutus-out-of-bounds call (he stepped
+     * completely off the arena before reaching the target zone) -- never dispatched on here; purely
+     * lets the server's own _wait_for_dash cut the round short, surfacing as an ordinary
+     * BRUTUS_DASH_MISSED "MISS!" flash same as a natural timeout. */
+    public static final String BRUTUS_OUT_OF_BOUNDS = "BRUTUS_OUT_OF_BOUNDS";
+    /** A surviving target's own frozen round-arrival position matched Brutus's own self-reported
+     * dash-landing position -- see BrutusAttackPresentation, which folds this into its own
+     * eliminatedRsns set. */
+    public static final String BRUTUS_PLAYER_ELIMINATED = "BRUTUS_PLAYER_ELIMINATED";
+    /** Fires once per Brutus Attack round, the instant that round's own role-aware arrival gate
+     * closes -- gives the client a fresh timestamp to run its own local dash countdown from, same
+     * role REPEAT_AFTER_ME_ROUND_STARTED already plays. */
+    public static final String BRUTUS_ROUND_STARTED = "BRUTUS_ROUND_STARTED";
+    /** A target's own self-report that it walked off its required zone's tiles after already
+     * arriving there this round, while the round was actually active -- see
+     * BrutusAttackPresentation, which folds this into the same eliminatedRsns set
+     * BRUTUS_PLAYER_ELIMINATED does, but deliberately does NOT flash "HIT!" for it -- Brutus didn't
+     * actually do anything, so this is silent unless it happened to be the last target standing
+     * (see the server's own brutus_target_left_zone doc). */
+    public static final String BRUTUS_TARGET_LEFT_ZONE = "BRUTUS_TARGET_LEFT_ZONE";
     public static final String CHANCE_SPACE_TRIGGERED = "CHANCE_SPACE_TRIGGERED";
     /** Echo of the client's own submit-click-click-click-result call -- same "already knows its
      * own final tally" reasoning as FISHING_CATCH_SUBMITTED's own doc just below. */
@@ -73,6 +110,7 @@ public final class Events
     public static final String PLAYER_LEFT = "PLAYER_LEFT";
     public static final String PLAYER_MOVED = "PLAYER_MOVED";
     public static final String PLAYER_READY = "PLAYER_READY";
+    public static final String PLAYER_TRANSFORMED = "PLAYER_TRANSFORMED";
     public static final String REPEAT_AFTER_ME_RESULT_SUBMITTED = "REPEAT_AFTER_ME_RESULT_SUBMITTED";
     public static final String REPEAT_AFTER_ME_ROUND_STARTED = "REPEAT_AFTER_ME_ROUND_STARTED";
     public static final String ROLE_ASSIGNED = "ROLE_ASSIGNED";
