@@ -93,6 +93,10 @@ public final class Events
     public static final String HOT_POTATO_EXPLODED = "HOT_POTATO_EXPLODED";
     public static final String ITEM_CAP_BLOCKED = "ITEM_CAP_BLOCKED";
     public static final String ITEM_GRANTED = "ITEM_GRANTED";
+    public static final String ITEM_SHOP_DISMISSED = "ITEM_SHOP_DISMISSED";
+    public static final String ITEM_SHOP_ENCOUNTER_OPENED = "ITEM_SHOP_ENCOUNTER_OPENED";
+    public static final String ITEM_SHOP_PURCHASE_FAILED = "ITEM_SHOP_PURCHASE_FAILED";
+    public static final String ITEM_SHOP_PURCHASED = "ITEM_SHOP_PURCHASED";
     public static final String ITEM_USED = "ITEM_USED";
     public static final String JAD_AWAKENED = "JAD_AWAKENED";
     public static final String JAD_DISMISSED = "JAD_DISMISSED";

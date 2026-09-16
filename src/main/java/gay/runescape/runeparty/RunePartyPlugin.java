@@ -10,6 +10,7 @@ import gay.runescape.runeparty.presentation.GoldenGnomePresentation;
 import gay.runescape.runeparty.presentation.ItemPresentation;
 import gay.runescape.runeparty.presentation.JadPresentation;
 import gay.runescape.runeparty.presentation.WiseOldManPresentation;
+import gay.runescape.runeparty.presentation.ItemShopPresentation;
 import gay.runescape.runeparty.presentation.MinigamePresentation;
 import gay.runescape.runeparty.net.MinigameReward;
 import gay.runescape.runeparty.net.MinigameScore;
@@ -39,6 +40,8 @@ import gay.runescape.runeparty.overlays.DanceDanceRuneScapeOverlay;
 import gay.runescape.runeparty.overlays.FishingCatchOverlay;
 import gay.runescape.runeparty.overlays.HardcodedCourseLauncherOverlay;
 import gay.runescape.runeparty.overlays.HotPotatoOverlay;
+import gay.runescape.runeparty.overlays.ItemShopDialogueOverlay;
+import gay.runescape.runeparty.overlays.ItemShopNpcOverlay;
 import gay.runescape.runeparty.overlays.JadEncounter;
 import gay.runescape.runeparty.overlays.JaddyDuelModel;
 import gay.runescape.runeparty.overlays.PlayerOverlay;
@@ -624,6 +627,58 @@ public class RunePartyPlugin extends Plugin
      * all for a decline/timeout -- only a real steal is announced. */
     public static final long WISE_OLD_MAN_OUTCOME_BANNER_DURATION_MS = GOLDEN_GNOME_OUTCOME_BANNER_DURATION_MS;
 
+    // The Item Shop's own shopkeeper (RuneMonk npc id 2151), and the animation he idles on while
+    // standing beside his own tile (ItemShopNpcOverlay, the only reader of either). 808 (a generic
+    // stand-idle) is a placeholder, same "will adjust later" status the prices below carry -- swap
+    // it for whatever this NPC's real idle animation turns out to be.
+    public static final int ITEM_SHOP_NPC_ID = 2151;
+    public static final int ITEM_SHOP_NPC_IDLE_ANIMATION_ID = 808;
+    // Loosely paired with the server's own ItemTile.ITEM_CAP (tiles/item_tile.py), not protocol-
+    // coupled -- see ItemShopDialogueOverlay, the only reader: purely so the dialogue doesn't even
+    // offer an item the server would reject as "not enough room to hold another item", same
+    // "the server still re-checks for real" reasoning WISE_OLD_MAN_GNOME_STEAL_COST's own doc
+    // gives for its own affordability guard.
+    public static final int ITEM_CAP = 3;
+
+    /** One item this Item Shop sells -- itemKey matches the server's own items/__init__.py
+     * REGISTRY (see Items.java, the client-side twin) so the dialogue can pull each item's real
+     * display name/effect description straight from there rather than duplicating them here.
+     * price is loosely paired with the server's own ITEM_SHOP_CATALOG (app.py), not protocol-
+     * coupled -- see ItemShopDialogueOverlay, the only reader: purely so the dialogue shows the
+     * right price and can grey out (well, just skip) anything the local player can't afford, same
+     * "the server still re-checks for real" reasoning WISE_OLD_MAN_GNOME_STEAL_COST's own doc
+     * gives for its own affordability guard. */
+    public static final class ItemShopEntry
+    {
+        public final String itemKey;
+        public final int price;
+
+        public ItemShopEntry(String itemKey, int price)
+        {
+            this.itemKey = itemKey;
+            this.price = price;
+        }
+    }
+
+    // V1 placeholder prices, all in the 7-15 coin range -- not yet host-configurable or balanced
+    // against each item's own real power, same "placeholder, will adjust later" status
+    // GOLDEN_GNOME_PRICE started at. Order/keys/prices must match the server's own
+    // ITEM_SHOP_CATALOG (app.py) exactly.
+    public static final List<ItemShopEntry> ITEM_SHOP_CATALOG = List.of(
+        new ItemShopEntry("energy-potion", 7),
+        new ItemShopEntry("gnome-glider", 9),
+        new ItemShopEntry("coin-trap", 10),
+        new ItemShopEntry("tele-block", 12),
+        new ItemShopEntry("tele-home", 15)
+    );
+
+    /** How long AnnouncementOverlay's Item Shop outcome banner stays up -- "You/<rsn> purchased
+     * <item>!"/"You/<rsn> can't afford <item>!" -- fired on ITEM_SHOP_PURCHASED/
+     * ITEM_SHOP_PURCHASE_FAILED, same duration/queuing shape GOLDEN_GNOME_OUTCOME_BANNER_DURATION_MS's
+     * own doc describes. No banner at all for a decline/timeout -- only a real purchase attempt
+     * (successful or not) is announced. */
+    public static final long ITEM_SHOP_OUTCOME_BANNER_DURATION_MS = GOLDEN_GNOME_OUTCOME_BANNER_DURATION_MS;
+
     /** How long AnnouncementOverlay's "CHANCE TILE!" title card stays up before the three-icon
      * tableau below takes over -- same single-line-title treatment/duration idiom as
      * ITEM_BANNER_DURATION_MS's own "ITEM SPACE!" card. See ChanceSpacePresentation's own
@@ -830,6 +885,8 @@ public class RunePartyPlugin extends Plugin
     private CrabRaveHudOverlay crabRaveHudOverlay;
     private WiseOldManNpcOverlay wiseOldManNpcOverlay;
     private WiseOldManDialogueOverlay wiseOldManDialogueOverlay;
+    private ItemShopNpcOverlay itemShopNpcOverlay;
+    private ItemShopDialogueOverlay itemShopDialogueOverlay;
     private PlayerTransformOverlay playerTransformOverlay;
     private FishingCatchOverlay fishingCatchOverlay;
     private ClickClickClickOverlay clickClickClickOverlay;
@@ -854,6 +911,7 @@ public class RunePartyPlugin extends Plugin
     private MinigamePresentation minigamePresentation;
     private JadPresentation jadPresentation;
     private WiseOldManPresentation wiseOldManPresentation;
+    private ItemShopPresentation itemShopPresentation;
     private ChanceSpacePresentation chanceSpacePresentation;
     // Neither of these two is a "Presentation" -- both own real interactive behavior (building
     // RuneLite menu entries, issuing mark/unmark-tiles requests; making create/join/session API
@@ -1203,6 +1261,7 @@ public class RunePartyPlugin extends Plugin
         minigamePresentation = new MinigamePresentation(this);
         jadPresentation = new JadPresentation(this);
         wiseOldManPresentation = new WiseOldManPresentation(this);
+        itemShopPresentation = new ItemShopPresentation(this);
         chanceSpacePresentation = new ChanceSpacePresentation(this);
         courseBuilder = new CourseBuilder(this);
         sessionManager = new SessionManager(this);
@@ -1243,6 +1302,13 @@ public class RunePartyPlugin extends Plugin
         wiseOldManDialogueOverlay = new WiseOldManDialogueOverlay(client, this, mouseManager, spriteManager, rosterReducer);
         overlayManager.add(wiseOldManDialogueOverlay);
         wiseOldManDialogueOverlay.register();
+
+        itemShopNpcOverlay = new ItemShopNpcOverlay(client, this);
+        overlayManager.add(itemShopNpcOverlay);
+
+        itemShopDialogueOverlay = new ItemShopDialogueOverlay(client, this, mouseManager, spriteManager, rosterReducer);
+        overlayManager.add(itemShopDialogueOverlay);
+        itemShopDialogueOverlay.register();
 
         playerTransformOverlay = new PlayerTransformOverlay(client, this);
         overlayManager.add(playerTransformOverlay);
@@ -1313,6 +1379,8 @@ public class RunePartyPlugin extends Plugin
         if (crabRaveNpcOverlay != null) { crabRaveNpcOverlay.clear(); overlayManager.remove(crabRaveNpcOverlay); }
         if (wiseOldManNpcOverlay != null) { wiseOldManNpcOverlay.clear(); overlayManager.remove(wiseOldManNpcOverlay); }
         if (wiseOldManDialogueOverlay != null) { wiseOldManDialogueOverlay.unregister(); overlayManager.remove(wiseOldManDialogueOverlay); }
+        if (itemShopNpcOverlay != null) { itemShopNpcOverlay.clear(); overlayManager.remove(itemShopNpcOverlay); }
+        if (itemShopDialogueOverlay != null) { itemShopDialogueOverlay.unregister(); overlayManager.remove(itemShopDialogueOverlay); }
         if (crabRaveHudOverlay != null) overlayManager.remove(crabRaveHudOverlay);
         if (playerTransformOverlay != null) { playerTransformOverlay.clear(); overlayManager.remove(playerTransformOverlay); }
         if (fishingCatchOverlay != null) overlayManager.remove(fishingCatchOverlay);
@@ -2115,6 +2183,19 @@ public class RunePartyPlugin extends Plugin
         return points;
     }
 
+    /** Every currently-marked Item Shop tile -- see ItemShopNpcOverlay, the only caller. Same
+     * "the reducer is the one source of truth," scanned-on-demand shape findWiseOldManTilePoints
+     * above already follows. */
+    public List<WorldPoint> findItemShopTilePoints()
+    {
+        List<WorldPoint> points = new ArrayList<>();
+        for (TileReducer.TileEntry entry : tileReducer.snapshot())
+        {
+            if ("ITEM_SHOP_TILE".equals(entry.tileType)) points.add(entry.point);
+        }
+        return points;
+    }
+
     /** Every currently-marked Crab Rave arena tile, if the board's actually swapped to it -- see
      * CrabRavePresentation#onDanceFinished (bounding-box "am I in the zone" check) and
      * CrabRaveNpcOverlay (crab spawn-point placement), the only readers. Same "the reducer is the
@@ -2651,7 +2732,8 @@ public class RunePartyPlugin extends Plugin
     public boolean isLocalPlayerReadyToUseItem()
     {
         if (phase != GamePhase.ACTIVE || pendingRoll || minigamePresentation.isActive()) return false;
-        if (jadPresentation.getEncounterRsn() != null || wiseOldManPresentation.getEncounterRsn() != null) return false;
+        if (jadPresentation.getEncounterRsn() != null || wiseOldManPresentation.getEncounterRsn() != null
+            || itemShopPresentation.getEncounterRsn() != null) return false;
         if (System.currentTimeMillis() < turnEffectGateUntil) return false;
 
         String self = localRsn();
@@ -3351,6 +3433,15 @@ public class RunePartyPlugin extends Plugin
                 break;
             }
 
+            case Events.ITEM_SHOP_ENCOUNTER_OPENED:
+            case Events.ITEM_SHOP_PURCHASED:
+            case Events.ITEM_SHOP_PURCHASE_FAILED:
+            case Events.ITEM_SHOP_DISMISSED:
+            {
+                itemShopPresentation.apply(e, catchingUp);
+                break;
+            }
+
             case Events.JADDY_ATTACK_TRIGGERED:
             {
                 // Purely cosmetic, no real state to fold -- this never touches a presentation class
@@ -3489,10 +3580,12 @@ public class RunePartyPlugin extends Plugin
             {
                 // PATH/PENALTY_TILE/ITEM_TILE are the tile types with a real (coins/item) effect so
                 // far (see the COINS_CHANGED/ITEM_GRANTED cases below, which actually pay/grant it)
-                // -- START/EVENT_TILE are still no-ops, but this event fires for every type so this
-                // chat line is always accurate regardless. JAD_TILE has no coins/item effect of its
-                // own either, but does trigger a purely client-side cosmetic reaction below --
-                // spawning Jad's own model.
+                // -- START is still a no-op, but this event fires for every type so this chat line
+                // is always accurate regardless. JAD_TILE/WISE_OLD_MAN_TILE/ITEM_SHOP_TILE have no
+                // coins/item effect of their own either, but each triggers its own purely
+                // client-side cosmetic reaction below/elsewhere -- Jad's model spawning, or (for
+                // the latter two) their own dedicated encounter-opened event landing right behind
+                // this same one.
                 String tileEffectPlayer = Json.requiredStr(e.payload, type, "player");
                 String tileEffectType = Json.requiredStr(e.payload, type, "tileType");
                 if (!catchingUp)
@@ -3787,6 +3880,7 @@ public class RunePartyPlugin extends Plugin
         goldenGnomePresentation.reset();
         jadPresentation.reset();
         wiseOldManPresentation.reset();
+        itemShopPresentation.reset();
         chanceSpacePresentation.reset();
         coinPopups.clear();
         diceRollRsn = null; diceRollValue = 0; diceRollBonus = 0; diceRollStart = 0; diceRollUntil = 0;
@@ -4300,5 +4394,34 @@ public class RunePartyPlugin extends Plugin
 
         submitAction("Wise Old Man choice", () -> apiClient.wiseOldManChoose(gid, self, token, action, target),
             e -> addChatMessage("Failed to submit your choice to the Wise Old Man: " + e.getMessage()));
+    }
+
+    /** The rsn currently mid-Item-Shop-encounter, or null -- see ItemShopDialogueOverlay, the only
+     * reader beyond the getters below: only shows its own dialogue box when this equals the local
+     * player's own rsn. */
+    public String getItemShopEncounterRsn() { return itemShopPresentation.getEncounterRsn(); }
+    public long getItemShopAwakenedAt() { return itemShopPresentation.getAwakenedAt(); }
+    public long getItemShopRevealAt() { return itemShopPresentation.getRevealAt(); }
+    public String getItemShopOutcome() { return itemShopPresentation.getOutcome(); }
+    public String getItemShopOutcomeRsn() { return itemShopPresentation.getOutcomeRsn(); }
+    public String getItemShopOutcomeItemDisplayName() { return itemShopPresentation.getOutcomeItemDisplayName(); }
+    public Integer getItemShopOutcomePrice() { return itemShopPresentation.getOutcomePrice(); }
+    public long getItemShopOutcomeBannerUntil() { return itemShopPresentation.getOutcomeBannerUntil(); }
+
+    /** Submits the local player's own choice for their currently-open Item Shop encounter --
+     * action is "buy_item"/"decline", itemKey is required for "buy_item" (see
+     * ApiClient#itemShopChoose). Called only by ItemShopDialogueOverlay's own click handling,
+     * fire-and-forget same as submitWiseOldManChoice's own doc describes -- the eventual
+     * ITEM_SHOP_DISMISSED that closes the encounter (or a 409 chat message if the server's own
+     * re-check rejects it) is what the dialogue box itself reacts to, not this call's own return. */
+    public void submitItemShopChoice(String action, String itemKey)
+    {
+        String self = localRsn();
+        final String gid = gameId;
+        final String token = playerToken;
+        if (self == null || gid == null || token == null) return;
+
+        submitAction("Item Shop choice", () -> apiClient.itemShopChoose(gid, self, token, action, itemKey),
+            e -> addChatMessage("Failed to submit your choice to the Item Shop: " + e.getMessage()));
     }
 }

@@ -195,6 +195,9 @@ public class AnnouncementOverlay extends Overlay
     private static final long GOLDEN_GNOME_OUTCOME_FADE_MS = DEFAULT_FADE_MS;
     private static final float GOLDEN_GNOME_OUTCOME_SIZE = 32f;
 
+    private static final long ITEM_SHOP_OUTCOME_FADE_MS = DEFAULT_FADE_MS;
+    private static final float ITEM_SHOP_OUTCOME_SIZE = 32f;
+
     private static final long CHANCE_SPACE_ICON_STAGE_FADE_MS = DEFAULT_FADE_MS;
     private static final int CHANCE_SPACE_ICON_SPACING = 160; // each player token's own x offset from center; the arrow sits at dead center
     private static final int CHANCE_SPACE_TOKEN_RADIUS = 22;
@@ -276,6 +279,7 @@ public class AnnouncementOverlay extends Overlay
         renderTeleBlockCastAnnouncement(g);
         renderCoinTrapAnnouncement(g);
         renderWiseOldManStolen(g);
+        renderItemShopOutcome(g);
         renderMinigameBanner(g);
         renderMinigameSpinner(g);
         renderMinigameReadyCheck(g);
@@ -1126,6 +1130,48 @@ public class AnnouncementOverlay extends Overlay
 
         g.setFont(FontManager.getRunescapeBoldFont().deriveFont(WISE_OLD_MAN_STOLEN_TITLE_SIZE));
         drawCenteredText(g, title, centerX, y, Color.WHITE, alpha);
+    }
+
+    /** Draws the Item Shop purchase follow-up -- "You/&lt;rsn&gt; purchased &lt;item&gt;!" or
+     * "You/&lt;rsn&gt; can't afford &lt;item&gt;!" -- addressed to whoever the outcome belongs to,
+     * shown to every player same as renderGoldenGnomeOutcome's own doc describes for its own
+     * purchased/failed pair. No banner at all for a decline/timeout -- only a real purchase
+     * attempt (successful or not) is announced. */
+    private void renderItemShopOutcome(Graphics2D g)
+    {
+        Float alpha = BannerAnim.fadeAlpha(plugin.getItemShopOutcomeBannerUntil(), ITEM_SHOP_OUTCOME_FADE_MS);
+        if (alpha == null) return;
+
+        String outcome = plugin.getItemShopOutcome();
+        String rsn = plugin.getItemShopOutcomeRsn();
+        String itemDisplayName = plugin.getItemShopOutcomeItemDisplayName();
+        boolean isLocal = isLocal(rsn);
+
+        String text;
+        Color color;
+        if ("purchased".equals(outcome))
+        {
+            text = itemDisplayName == null ? null
+                : isLocal ? "You purchased " + itemDisplayName + "!"
+                : rsn != null ? rsn + " purchased " + itemDisplayName + "!" : null;
+            color = WELCOME_TITLE_COLOR;
+        }
+        else if ("failed".equals(outcome))
+        {
+            text = itemDisplayName == null ? null
+                : isLocal ? "You can't afford " + itemDisplayName + "!"
+                : rsn != null ? rsn + " can't afford " + itemDisplayName + "!" : null;
+            color = DICE_ROLL_BONUS_NEGATIVE_COLOR;
+        }
+        else
+        {
+            text = null;
+            color = Color.WHITE;
+        }
+        if (text == null) return;
+
+        g.setFont(FontManager.getRunescapeBoldFont().deriveFont(ITEM_SHOP_OUTCOME_SIZE));
+        drawCenteredText(g, text, client.getCanvasWidth() / 2, client.getCanvasHeight() / 3, color, alpha);
     }
 
     /** How far the wheel has rotated at {@code elapsed} into its spin -- eased to a stop, then held

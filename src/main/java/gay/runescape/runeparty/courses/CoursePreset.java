@@ -225,7 +225,7 @@ public final class CoursePreset
         tiles.add(new RelativeTile(-3, 2, "CHANCE_TILE", null));
         tiles.add(new RelativeTile(-4, 2, "PATH", null));
         tiles.add(new RelativeTile(-5, 2, "PATH", null));
-        tiles.add(new RelativeTile(-5, 1, "EVENT_TILE", null));
+        tiles.add(new RelativeTile(-5, 1, "ITEM_SHOP_TILE", null));
         tiles.add(new RelativeTile(-5, 0, "ITEM_TILE", null));
         tiles.add(new RelativeTile(-5, -1, "PENALTY_TILE", null));
 
