@@ -56,7 +56,7 @@ public class RunePartyPanel extends PluginPanel
     private String activeMinigameKey = null;
 
     // Item use -- one button per distinct held item, visible only on the local player's own turn
-    // (see RunePartyPlugin#isLocalPlayerReadyToRoll), rebuilt only when the held items actually
+    // (see RunePartyPlugin#isLocalPlayerReadyToUseItem), rebuilt only when the held items actually
     // change rather than on every refresh() -- same "rebuild only when the key changes" shape as
     // minigameControlSlot above. itemsCard is the titled "ITEMS" grouping card wrapping it, same
     // bordered-card look as hostControlsCard's "HOST CONTROLS" -- only itemsCard's own visibility
@@ -515,7 +515,7 @@ public class RunePartyPanel extends PluginPanel
     /** Shows one "Use &lt;item&gt; (x&lt;count&gt;)" button per distinct item the local player
      * holds, or a plain "no items yet" line if they hold none -- visible for the whole game
      * (any seated PLAYER, any turn), not just while there's something to click. Buttons themselves
-     * are disabled unless it's genuinely the local player's turn to act (isLocalPlayerReadyToRoll())
+     * are disabled unless it's genuinely the local player's turn to act (isLocalPlayerReadyToUseItem())
      * and they haven't already used one this turn (isItemUsedThisTurn()) -- one item per turn,
      * regardless of how many they still hold. Rebuilt only when the held items or that
      * enabled/disabled state actually change (see lastItemsKey), not on every refresh() call. */
@@ -619,10 +619,14 @@ public class RunePartyPanel extends PluginPanel
         }
 
         // Buttons stay visible the whole time now, just disabled outside the "genuinely your turn,
-        // haven't already used one" window -- see isLocalPlayerReadyToRoll/isItemUsedThisTurn --
+        // haven't already used one" window -- see isLocalPlayerReadyToUseItem/isItemUsedThisTurn --
         // folded into the rebuild key so a turn starting/ending re-enables/disables them without
-        // waiting on the held items themselves to change.
-        boolean canUseNow = plugin.isLocalPlayerReadyToRoll() && !plugin.isItemUsedThisTurn();
+        // waiting on the held items themselves to change. Deliberately NOT
+        // isLocalPlayerReadyToRoll() -- that one also requires standing on the turn's own tracked
+        // position, a real requirement for physically rolling but not one the server enforces for
+        // items at all (see isLocalPlayerReadyToUseItem's own doc) -- using it here greyed out
+        // every item button the instant a player wandered even slightly off that spot.
+        boolean canUseNow = plugin.isLocalPlayerReadyToUseItem() && !plugin.isItemUsedThisTurn();
         String key = "items:" + canUseNow + ":" + buildItemsKey(localEntry.items);
         if (key.equals(lastItemsKey)) return;
         lastItemsKey = key;

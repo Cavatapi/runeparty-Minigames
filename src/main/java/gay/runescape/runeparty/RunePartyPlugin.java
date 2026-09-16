@@ -1732,7 +1732,7 @@ public class RunePartyPlugin extends Plugin
      * &lt;item&gt;" entry. Refuses silently rather than arming a placement that'd only 409 anyway. */
     public void beginItemPlacement(String itemKey)
     {
-        if (itemKey == null || !isLocalPlayerReadyToRoll() || isItemUsedThisTurn()) return;
+        if (itemKey == null || !isLocalPlayerReadyToUseItem() || isItemUsedThisTurn()) return;
         if (!Items.get(itemKey).requiresPlacement()) return;
         itemPlacementKey = itemKey;
         refreshPanel();
@@ -1794,7 +1794,7 @@ public class RunePartyPlugin extends Plugin
      * right-click-a-tile (see addItemTargetMenuEntry/confirmItemTargetOn). */
     public void beginItemTargeting(String itemKey)
     {
-        if (itemKey == null || !isLocalPlayerReadyToRoll() || isItemUsedThisTurn()) return;
+        if (itemKey == null || !isLocalPlayerReadyToUseItem() || isItemUsedThisTurn()) return;
         if (!Items.get(itemKey).requiresTarget()) return;
         itemTargetKey = itemKey;
         refreshPanel();
@@ -2627,6 +2627,30 @@ public class RunePartyPlugin extends Plugin
         return standingOnTrackedPositionCached;
     }
 
+    /** Whether the local player could actually use/place/target an item right now -- the real
+     * "ready to act" window the server's own _require_ready_to_act enforces for use-item/
+     * use-item-on-player (app.py): their own turn, no roll pending, no mini-game running, and no
+     * Jad/Wise Old Man encounter open. Deliberately NOT isLocalPlayerReadyToRoll() itself, even
+     * though RunePartyPanel's own item buttons used to be gated on that: standingOnTrackedPosition
+     * is a real requirement for physically performing the Spin emote to roll, but items have no
+     * such requirement server-side at all -- a player who's simply walked a few tiles away from
+     * where their turn started (toward the Wise Old Man, say, or just wandering) would still have
+     * every item button wrongly greyed out under that check, even though the server would happily
+     * accept the request. jadPresentation/wiseOldManPresentation's own encounterRsn getters are
+     * checked directly here rather than relying on standingOnTrackedPositionCached to incidentally
+     * cover that window the way isLocalPlayerReadyToRoll() effectively does (landing on either
+     * tile is itself a move away from the turn's own tracked start position) -- since this method
+     * drops that check entirely, the encounter gate has to be explicit instead. */
+    public boolean isLocalPlayerReadyToUseItem()
+    {
+        if (phase != GamePhase.ACTIVE || pendingRoll || minigamePresentation.isActive()) return false;
+        if (jadPresentation.getEncounterRsn() != null || wiseOldManPresentation.getEncounterRsn() != null) return false;
+        if (System.currentTimeMillis() < turnEffectGateUntil) return false;
+
+        String self = localRsn();
+        return self != null && self.equalsIgnoreCase(currentTurnRsn);
+    }
+
     /** Whether the local player needs to walk back to their own tracked board position before they
      * can roll again -- it's their turn, no roll is pending, no mini-game is running, and they're
      * not currently standing where TURN_STARTED left them (e.g. they wandered off toward the
@@ -2957,7 +2981,7 @@ public class RunePartyPlugin extends Plugin
         long delay = turnEffectGateUntil > now ? (turnEffectGateUntil - now) + POST_TURN_EFFECT_GRACE_MS : 0;
         extendTurnEffectGate(now + delay + durationMs);
 
-        // The panel (isLocalPlayerReadyToRoll-gated item/roll UI) only ever refreshes on an
+        // The panel (isLocalPlayerReadyToUseItem/isLocalPlayerReadyToRoll-gated item/roll UI) only ever refreshes on an
         // explicit refreshPanel() call, unlike AnnouncementOverlay's per-frame render() -- so
         // without this, once turnEffectGateUntil lifts here with no new server event to trigger a
         // refresh, the item-use section/SPIN-adjacent panel state can go stale indefinitely. Fire
