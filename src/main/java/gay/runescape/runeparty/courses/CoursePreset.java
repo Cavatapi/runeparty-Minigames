@@ -197,7 +197,7 @@ public final class CoursePreset
      * baked in below (the perimeter walk's own "+1, wrapping at the end" order) -- there's no
      * implicit default to lean on. Also exercises a Golden Gnome modifier end-to-end (see
      * RelativeTile#decorative) two steps out from START, so it's reachable by almost any first
-     * roll, plus a spread of every other course tile type (ITEM, JAD, PENALTY, CHANCE)
+     * roll, plus a spread of every other course tile type (ITEM, JAD, PENALTY, CHANCE, WISE_OLD_MAN)
      * swapped in around the loop -- roughly Fally Park's own PATH-heavy proportions, just scaled
      * down to this course's 36 real tiles, so the default course isn't just a bare ring of PATH.
      */
@@ -231,6 +231,7 @@ public final class CoursePreset
         swapType(tiles, 24, "PENALTY_TILE");
         swapType(tiles, 27, "ITEM_TILE");
         swapType(tiles, 29, "CHANCE_TILE");
+        swapType(tiles, 20, "WISE_OLD_MAN_TILE");
         swapType(tiles, 32, "PENALTY_TILE");
         swapType(tiles, 34, "CHANCE_TILE");
 

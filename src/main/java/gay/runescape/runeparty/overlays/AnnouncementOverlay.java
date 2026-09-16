@@ -105,6 +105,7 @@ public class AnnouncementOverlay extends Overlay
 
     private static final long COIN_TRAP_ANNOUNCE_FADE_MS = DEFAULT_FADE_MS;
     private static final float COIN_TRAP_ANNOUNCE_TITLE_SIZE = 32f;
+    private static final float WISE_OLD_MAN_STOLEN_TITLE_SIZE = 32f;
 
     private static final float DICE_ROLL_BONUS_LABEL_SIZE = 26f;
     private static final Color DICE_ROLL_BONUS_POSITIVE_COLOR = new Color(80, 220, 80);
@@ -274,6 +275,7 @@ public class AnnouncementOverlay extends Overlay
         renderItemUsedAnnouncement(g);
         renderTeleBlockCastAnnouncement(g);
         renderCoinTrapAnnouncement(g);
+        renderWiseOldManStolen(g);
         renderMinigameBanner(g);
         renderMinigameSpinner(g);
         renderMinigameReadyCheck(g);
@@ -1092,6 +1094,31 @@ public class AnnouncementOverlay extends Overlay
         String title = (isLocal(rsn) ? "You" : rsn) + " landed on a Coin Trap!";
 
         g.setFont(FontManager.getRunescapeBoldFont().deriveFont(COIN_TRAP_ANNOUNCE_TITLE_SIZE));
+        drawCenteredText(g, title, centerX, y, Color.WHITE, alpha);
+    }
+
+    /** Draws "&lt;thief&gt; stole N coins from &lt;victim&gt;!" or "...a Golden Gnome from
+     * &lt;victim&gt;!" -- shown to every player, not just the two involved, the instant a Wise Old
+     * Man steal resolves (see WiseOldManPresentation#apply's own WISE_OLD_MAN_STOLEN handling). No
+     * banner at all for a decline/timeout -- only a real steal is announced. */
+    private void renderWiseOldManStolen(Graphics2D g)
+    {
+        Float alpha = BannerAnim.fadeAlpha(plugin.getWiseOldManStolenBannerUntil(), DEFAULT_FADE_MS);
+        if (alpha == null) return;
+        String thief = plugin.getWiseOldManStolenThief();
+        String victim = plugin.getWiseOldManStolenVictim();
+        String kind = plugin.getWiseOldManStolenKind();
+        if (thief == null || victim == null || kind == null) return;
+
+        int centerX = client.getCanvasWidth() / 2;
+        int y = client.getCanvasHeight() / 3;
+
+        String thiefLabel = isLocal(thief) ? "You" : thief;
+        String victimLabel = isLocal(victim) ? "you" : victim;
+        String what = "golden_gnome".equals(kind) ? "a Golden Gnome" : (plugin.getWiseOldManStolenAmount() + " coins");
+        String title = thiefLabel + " stole " + what + " from " + victimLabel + "!";
+
+        g.setFont(FontManager.getRunescapeBoldFont().deriveFont(WISE_OLD_MAN_STOLEN_TITLE_SIZE));
         drawCenteredText(g, title, centerX, y, Color.WHITE, alpha);
     }
 

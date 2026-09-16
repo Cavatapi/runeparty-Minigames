@@ -57,7 +57,7 @@ public final class HardcodedCourse
             t(2996, 3374, "START", 0, 1),
             t(2996, 3376, "PATH", 1, 58),
             t(3000, 3376, "PATH", 3, 59),
-            t(3002, 3379, "PATH", 5, 6),
+            t(3002, 3379, "WISE_OLD_MAN_TILE", 5, 6),
             t(2999, 3380, "PATH", 6, 7),
             t(2996, 3380, "JAD_TILE", 7, 46),
             t(2993, 3378, "ITEM_TILE", 8, 9),

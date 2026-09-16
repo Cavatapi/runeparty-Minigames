@@ -453,6 +453,25 @@ public class ApiClient
         }
     }
 
+    /** Resolves a pending Wise Old Man encounter -- action is "steal_coins", "steal_golden_gnome",
+     * or "decline"; target is the rsn to steal from (required for either steal action, ignored for
+     * decline). 409s if no encounter is pending for this player, or if the server's own
+     * affordability/ownership re-check rejects a steal the dialogue shouldn't have offered in the
+     * first place. */
+    public void wiseOldManChoose(String gameId, String playerRsn, String playerToken, String action, String target) throws IOException
+    {
+        JsonObject body = new JsonObject();
+        body.addProperty("player", playerRsn);
+        body.addProperty("action", action);
+        if (target != null) body.addProperty("target", target);
+
+        try (Response resp = post("/v1/games/" + gameId + "/wise-old-man-choose", body, playerToken))
+        {
+            String raw = bodyString(resp);
+            if (!resp.isSuccessful()) throw new IOException("Wise Old Man choice failed (" + resp.code() + "): " + raw);
+        }
+    }
+
     /** Spends one of the local player's held items on their own turn. 409s if they don't hold it or
      * it isn't their turn to act. */
     public void useItem(String gameId, String playerRsn, String playerToken, String itemKey) throws IOException

@@ -9,6 +9,7 @@ import gay.runescape.runeparty.presentation.ChanceSpacePresentation;
 import gay.runescape.runeparty.presentation.GoldenGnomePresentation;
 import gay.runescape.runeparty.presentation.ItemPresentation;
 import gay.runescape.runeparty.presentation.JadPresentation;
+import gay.runescape.runeparty.presentation.WiseOldManPresentation;
 import gay.runescape.runeparty.presentation.MinigamePresentation;
 import gay.runescape.runeparty.net.MinigameReward;
 import gay.runescape.runeparty.net.MinigameScore;
@@ -47,6 +48,8 @@ import gay.runescape.runeparty.overlays.SandwichRushHudOverlay;
 import gay.runescape.runeparty.overlays.StatsOverlay;
 import gay.runescape.runeparty.overlays.TileOverlay;
 import gay.runescape.runeparty.overlays.TurfWarsScoreOverlay;
+import gay.runescape.runeparty.overlays.WiseOldManDialogueOverlay;
+import gay.runescape.runeparty.overlays.WiseOldManNpcOverlay;
 import java.awt.Color;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -91,6 +94,8 @@ import net.runelite.api.gameval.SpotanimID;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.game.SpriteManager;
+import net.runelite.client.input.MouseManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
@@ -602,6 +607,23 @@ public class RunePartyPlugin extends Plugin
      * fading. */
     public static final long JAD_OUTCOME_BANNER_DURATION_MS = GOLDEN_GNOME_OUTCOME_BANNER_DURATION_MS;
 
+    // The Wise Old Man himself (RuneMonk npc id 2108), and the animation he idles on while
+    // standing beside his own tile (WiseOldManNpcOverlay, the only reader of either).
+    public static final int WISE_OLD_MAN_NPC_ID = 2108;
+    public static final int WISE_OLD_MAN_IDLE_ANIMATION_ID = 813;
+    // Loosely paired with the server's own WISE_OLD_MAN_GNOME_STEAL_COST (app.py), not protocol-
+    // coupled -- see WiseOldManDialogueOverlay, the only reader: purely so the dialogue doesn't
+    // even offer the "steal a Golden Gnome" option when the local player can't afford it, same
+    // "the server still re-checks for real" reasoning hoveredPurchasableGoldenGnomePoint's own doc
+    // gives for its own affordability guard.
+    public static final int WISE_OLD_MAN_GNOME_STEAL_COST = 73;
+
+    /** How long AnnouncementOverlay's Wise Old Man outcome banner stays up -- "<thief> stole N
+     * coins from <victim>!"/"...a Golden Gnome from <victim>!" -- fired on WISE_OLD_MAN_STOLEN,
+     * same duration/queuing shape JAD_OUTCOME_BANNER_DURATION_MS's own doc describes. No banner at
+     * all for a decline/timeout -- only a real steal is announced. */
+    public static final long WISE_OLD_MAN_OUTCOME_BANNER_DURATION_MS = GOLDEN_GNOME_OUTCOME_BANNER_DURATION_MS;
+
     /** How long AnnouncementOverlay's "CHANCE TILE!" title card stays up before the three-icon
      * tableau below takes over -- same single-line-title treatment/duration idiom as
      * ITEM_BANNER_DURATION_MS's own "ITEM SPACE!" card. See ChanceSpacePresentation's own
@@ -788,6 +810,8 @@ public class RunePartyPlugin extends Plugin
     @Inject private RunePartyConfig config;
     @Inject private ClientToolbar clientToolbar;
     @Inject private OverlayManager overlayManager;
+    @Inject private MouseManager mouseManager; // WiseOldManDialogueOverlay's own clickable options, the only consumer
+    @Inject private SpriteManager spriteManager; // the real chatbox background sprite, same consumer
     @Inject private ModelOutlineRenderer modelOutlineRenderer;
     @Inject private TooltipManager tooltipManager;
     @Inject private OkHttpClient okHttpClient;
@@ -804,6 +828,8 @@ public class RunePartyPlugin extends Plugin
     private JaddyDuelModel jaddyDuelModel;
     private CrabRaveNpcOverlay crabRaveNpcOverlay;
     private CrabRaveHudOverlay crabRaveHudOverlay;
+    private WiseOldManNpcOverlay wiseOldManNpcOverlay;
+    private WiseOldManDialogueOverlay wiseOldManDialogueOverlay;
     private PlayerTransformOverlay playerTransformOverlay;
     private FishingCatchOverlay fishingCatchOverlay;
     private ClickClickClickOverlay clickClickClickOverlay;
@@ -827,6 +853,7 @@ public class RunePartyPlugin extends Plugin
     private ItemPresentation itemPresentation;
     private MinigamePresentation minigamePresentation;
     private JadPresentation jadPresentation;
+    private WiseOldManPresentation wiseOldManPresentation;
     private ChanceSpacePresentation chanceSpacePresentation;
     // Neither of these two is a "Presentation" -- both own real interactive behavior (building
     // RuneLite menu entries, issuing mark/unmark-tiles requests; making create/join/session API
@@ -1175,6 +1202,7 @@ public class RunePartyPlugin extends Plugin
         itemPresentation = new ItemPresentation(this);
         minigamePresentation = new MinigamePresentation(this);
         jadPresentation = new JadPresentation(this);
+        wiseOldManPresentation = new WiseOldManPresentation(this);
         chanceSpacePresentation = new ChanceSpacePresentation(this);
         courseBuilder = new CourseBuilder(this);
         sessionManager = new SessionManager(this);
@@ -1208,6 +1236,13 @@ public class RunePartyPlugin extends Plugin
 
         crabRaveHudOverlay = new CrabRaveHudOverlay(this);
         overlayManager.add(crabRaveHudOverlay);
+
+        wiseOldManNpcOverlay = new WiseOldManNpcOverlay(client, this);
+        overlayManager.add(wiseOldManNpcOverlay);
+
+        wiseOldManDialogueOverlay = new WiseOldManDialogueOverlay(client, this, mouseManager, spriteManager, rosterReducer);
+        overlayManager.add(wiseOldManDialogueOverlay);
+        wiseOldManDialogueOverlay.register();
 
         playerTransformOverlay = new PlayerTransformOverlay(client, this);
         overlayManager.add(playerTransformOverlay);
@@ -1276,6 +1311,8 @@ public class RunePartyPlugin extends Plugin
         if (jadEncounter != null) { jadEncounter.clear(); overlayManager.remove(jadEncounter); }
         if (jaddyDuelModel != null) { jaddyDuelModel.clear(); overlayManager.remove(jaddyDuelModel); }
         if (crabRaveNpcOverlay != null) { crabRaveNpcOverlay.clear(); overlayManager.remove(crabRaveNpcOverlay); }
+        if (wiseOldManNpcOverlay != null) { wiseOldManNpcOverlay.clear(); overlayManager.remove(wiseOldManNpcOverlay); }
+        if (wiseOldManDialogueOverlay != null) { wiseOldManDialogueOverlay.unregister(); overlayManager.remove(wiseOldManDialogueOverlay); }
         if (crabRaveHudOverlay != null) overlayManager.remove(crabRaveHudOverlay);
         if (playerTransformOverlay != null) { playerTransformOverlay.clear(); overlayManager.remove(playerTransformOverlay); }
         if (fishingCatchOverlay != null) overlayManager.remove(fishingCatchOverlay);
@@ -2060,6 +2097,20 @@ public class RunePartyPlugin extends Plugin
         for (TileReducer.TileEntry entry : tileReducer.snapshot())
         {
             if ("REPEAT_AFTER_ME_TILE".equals(entry.tileType)) points.add(entry.point);
+        }
+        return points;
+    }
+
+    /** Every currently-marked Wise Old Man tile -- see WiseOldManNpcOverlay, the only reader: a
+     * real, host-placed course stop (unlike GoldenGnomeTile/CoinTrapTile), so unlike those two
+     * there could be more than one on the same board. Same "the reducer is the one source of
+     * truth," scanned-on-demand shape findRepeatAfterMeTilePoints already follows. */
+    public List<WorldPoint> findWiseOldManTilePoints()
+    {
+        List<WorldPoint> points = new ArrayList<>();
+        for (TileReducer.TileEntry entry : tileReducer.snapshot())
+        {
+            if ("WISE_OLD_MAN_TILE".equals(entry.tileType)) points.add(entry.point);
         }
         return points;
     }
@@ -3261,6 +3312,14 @@ public class RunePartyPlugin extends Plugin
                 break;
             }
 
+            case Events.WISE_OLD_MAN_ENCOUNTER_OPENED:
+            case Events.WISE_OLD_MAN_STOLEN:
+            case Events.WISE_OLD_MAN_DISMISSED:
+            {
+                wiseOldManPresentation.apply(e, catchingUp);
+                break;
+            }
+
             case Events.JADDY_ATTACK_TRIGGERED:
             {
                 // Purely cosmetic, no real state to fold -- this never touches a presentation class
@@ -3696,6 +3755,7 @@ public class RunePartyPlugin extends Plugin
         ceremonyPresentation.reset();
         goldenGnomePresentation.reset();
         jadPresentation.reset();
+        wiseOldManPresentation.reset();
         chanceSpacePresentation.reset();
         coinPopups.clear();
         diceRollRsn = null; diceRollValue = 0; diceRollBonus = 0; diceRollStart = 0; diceRollUntil = 0;
@@ -4180,4 +4240,34 @@ public class RunePartyPlugin extends Plugin
     public String getJadOutcome() { return jadPresentation.getOutcome(); }
     public String getJadOutcomeRsn() { return jadPresentation.getOutcomeRsn(); }
     public long getJadOutcomeBannerUntil() { return jadPresentation.getOutcomeBannerUntil(); }
+
+    /** The rsn currently mid-Wise-Old-Man-encounter, or null -- see WiseOldManDialogueOverlay, the
+     * only reader beyond the getters below: only shows its own dialogue box when this equals the
+     * local player's own rsn. */
+    public String getWiseOldManEncounterRsn() { return wiseOldManPresentation.getEncounterRsn(); }
+    public long getWiseOldManAwakenedAt() { return wiseOldManPresentation.getAwakenedAt(); }
+    public long getWiseOldManRevealAt() { return wiseOldManPresentation.getRevealAt(); }
+    public String getWiseOldManStolenThief() { return wiseOldManPresentation.getStolenThief(); }
+    public String getWiseOldManStolenVictim() { return wiseOldManPresentation.getStolenVictim(); }
+    public String getWiseOldManStolenKind() { return wiseOldManPresentation.getStolenKind(); }
+    public Integer getWiseOldManStolenAmount() { return wiseOldManPresentation.getStolenAmount(); }
+    public long getWiseOldManStolenBannerUntil() { return wiseOldManPresentation.getStolenBannerUntil(); }
+
+    /** Submits the local player's own choice for their currently-open Wise Old Man encounter --
+     * action is "steal_coins"/"steal_golden_gnome"/"decline", target is required for either steal
+     * action (see ApiClient#wiseOldManChoose). Called only by WiseOldManDialogueOverlay's own
+     * click handling, fire-and-forget same as every other player-action method here -- the
+     * eventual WISE_OLD_MAN_DISMISSED that closes the encounter (or a 409 chat message if the
+     * server's own re-check rejects it) is what the dialogue box itself reacts to, not this call's
+     * own return. */
+    public void submitWiseOldManChoice(String action, String target)
+    {
+        String self = localRsn();
+        final String gid = gameId;
+        final String token = playerToken;
+        if (self == null || gid == null || token == null) return;
+
+        submitAction("Wise Old Man choice", () -> apiClient.wiseOldManChoose(gid, self, token, action, target),
+            e -> addChatMessage("Failed to submit your choice to the Wise Old Man: " + e.getMessage()));
+    }
 }

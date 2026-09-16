@@ -129,4 +129,14 @@ public final class Events
     public static final String TRUE_OR_FALSE_ROUND_STARTED = "TRUE_OR_FALSE_ROUND_STARTED";
     public static final String TURN_SKIPPED = "TURN_SKIPPED";
     public static final String TURN_STARTED = "TURN_STARTED";
+    /** Closes the Wise Old Man encounter, whichever way it went -- outcome is "stole_coins",
+     * "stole_golden_gnome", "declined", or "timed_out". See WiseOldManPresentation, which clears
+     * its own pending-encounter state on this. */
+    public static final String WISE_OLD_MAN_DISMISSED = "WISE_OLD_MAN_DISMISSED";
+    /** Opens a Wise Old Man encounter for whoever just landed on the tile -- see
+     * WiseOldManPresentation, which folds this into its own encounterRsn/revealAt. */
+    public static final String WISE_OLD_MAN_ENCOUNTER_OPENED = "WISE_OLD_MAN_ENCOUNTER_OPENED";
+    /** A resolved steal (coins or a Golden Gnome) -- see WiseOldManPresentation, which folds this
+     * into the on-screen "X stole ... from Y!" announcement shown to every player. */
+    public static final String WISE_OLD_MAN_STOLEN = "WISE_OLD_MAN_STOLEN";
 }
