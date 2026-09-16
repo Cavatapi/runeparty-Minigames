@@ -81,6 +81,10 @@ public final class Events
     public static final String GAME_STARTED = "GAME_STARTED";
     public static final String GOLDEN_GNOME_LOST = "GOLDEN_GNOME_LOST";
     public static final String GOLDEN_GNOME_MOVED = "GOLDEN_GNOME_MOVED";
+    /** `player` tried to buy the board's own Golden Gnome but couldn't afford it -- see
+     * GoldenGnomePresentation, which folds this into the same outcome banner GOLDEN_GNOME_PURCHASED
+     * uses, just with a "can't afford" message instead of "got a Golden Gnome!". */
+    public static final String GOLDEN_GNOME_PURCHASE_FAILED = "GOLDEN_GNOME_PURCHASE_FAILED";
     public static final String GOLDEN_GNOME_PURCHASED = "GOLDEN_GNOME_PURCHASED";
     public static final String GOLDEN_GNOME_WON = "GOLDEN_GNOME_WON";
     public static final String HOME_TELEPORT_ARMED = "HOME_TELEPORT_ARMED";

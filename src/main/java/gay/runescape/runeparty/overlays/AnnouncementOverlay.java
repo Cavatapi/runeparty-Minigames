@@ -596,17 +596,23 @@ public class AnnouncementOverlay extends Overlay
         boolean isLocal = isLocal(rsn);
 
         String text;
+        Color color;
         if ("purchased".equals(outcome))
         {
             text = isLocal ? "You got a Golden Gnome!" : rsn != null ? rsn + " got a Golden Gnome!" : null;
+            color = WELCOME_TITLE_COLOR;
+        }
+        else if ("failed".equals(outcome))
+        {
+            text = isLocal ? "You can't afford a Golden Gnome!" : rsn != null ? rsn + " can't afford a Golden Gnome!" : null;
+            color = DICE_ROLL_BONUS_NEGATIVE_COLOR;
         }
         else
         {
             text = null;
+            color = Color.WHITE;
         }
         if (text == null) return;
-
-        Color color = "purchased".equals(outcome) ? WELCOME_TITLE_COLOR : Color.WHITE;
 
         g.setFont(FontManager.getRunescapeBoldFont().deriveFont(GOLDEN_GNOME_OUTCOME_SIZE));
         drawCenteredText(g, text, client.getCanvasWidth() / 2, client.getCanvasHeight() / 3, color, alpha);

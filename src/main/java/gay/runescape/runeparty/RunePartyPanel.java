@@ -1,6 +1,7 @@
 package gay.runescape.runeparty;
 
 import gay.runescape.runeparty.courses.CoursePreset;
+import gay.runescape.runeparty.net.ApiClient;
 
 import java.awt.*;
 import java.awt.datatransfer.StringSelection;
@@ -88,6 +89,16 @@ public class RunePartyPanel extends PluginPanel
     private final JButton endGameBtn = new JButton("End Game");
 
     private final JButton leaveGameBtn = new JButton("Leave Game");
+
+    // Tile legend -- a static reference card, always visible underneath everything else in the
+    // in-game card (see buildLegendCard/refreshLegend), listing every standard course tile type's
+    // own color/name. Rebuilt only once the served catalog's own size actually changes (see
+    // legendBuiltForCatalogSize), not on every refresh() -- same "rebuild only when the key
+    // changes" restraint minigameControlSlot/itemUsePanel already use, just keyed on catalog size
+    // rather than a content string since the catalog itself never changes shape mid-game.
+    private final JPanel legendCard = new JPanel();
+    private final JPanel legendRowsPanel = new JPanel();
+    private int legendBuiltForCatalogSize = -1;
 
     private String lastRosterKey = null;
 
@@ -246,6 +257,9 @@ public class RunePartyPanel extends PluginPanel
         leaveGameBtn.setMaximumSize(new Dimension(Integer.MAX_VALUE, 28));
         leaveGameBtn.addActionListener(e -> plugin.leaveGame());
 
+        buildLegendCard();
+        legendCard.setAlignmentX(LEFT_ALIGNMENT);
+
         card.add(joinCodeRow);
         card.add(Box.createVerticalStrut(8));
         card.add(statusLabel);
@@ -264,6 +278,8 @@ public class RunePartyPanel extends PluginPanel
         card.add(hostControlsCard);
         card.add(Box.createVerticalStrut(8));
         card.add(leaveGameBtn);
+        card.add(Box.createVerticalStrut(8));
+        card.add(legendCard);
         return card;
     }
 
@@ -313,6 +329,107 @@ public class RunePartyPanel extends PluginPanel
         gameSettingsRow.add(label, BorderLayout.WEST);
         gameSettingsRow.add(maxRoundsSpinner, BorderLayout.EAST);
         return gameSettingsRow;
+    }
+
+    /** A titled, bordered reference card listing every standard course tile type's own served
+     * color and name -- same "titled card" look hostControlsCard/itemsCard already use, just its
+     * own green accent so the three read as visually distinct. Unlike those two, never toggled:
+     * this is static reference info relevant for the whole time a player's in a game, not something
+     * gated on host/turn/phase. Row content comes from refreshLegend(), called from refresh() --
+     * this method only builds the empty shell (title, row container), since the served tile-type
+     * catalog usually hasn't landed yet when the panel itself is first constructed. */
+    private void buildLegendCard()
+    {
+        legendCard.setLayout(new BoxLayout(legendCard, BoxLayout.Y_AXIS));
+        legendCard.setBackground(new Color(24, 34, 28));
+        legendCard.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(new Color(50, 105, 70), 1),
+            new EmptyBorder(8, 8, 8, 8)));
+
+        JLabel title = new JLabel("TILE LEGEND");
+        title.setForeground(new Color(120, 205, 150));
+        title.setFont(FontManager.getRunescapeSmallFont());
+        title.setAlignmentX(LEFT_ALIGNMENT);
+
+        legendRowsPanel.setLayout(new BoxLayout(legendRowsPanel, BoxLayout.Y_AXIS));
+        legendRowsPanel.setOpaque(false);
+        legendRowsPanel.setAlignmentX(LEFT_ALIGNMENT);
+
+        legendCard.add(title);
+        legendCard.add(Box.createVerticalStrut(6));
+        legendCard.add(legendRowsPanel);
+    }
+
+    /** (Re)builds legendRowsPanel from the served tile-type catalog -- one row per standard course
+     * tile type, a small color swatch (see TileSwatchIcon) next to its display name. Same
+     * isModifier/isMinigameTile exclusion RunePartyMapOverlay#buildLegendRows uses for its own
+     * legend, and the same reasoning: Golden Gnome/Coin Trap are decorative overlays with their own
+     * bespoke marker elsewhere, not a course tile color worth a swatch, and every mini-game-only
+     * type (Arena, Turf Wars, Sandwich Rush, Hot Potato, Who's Your Jaddy, Fishing/Pond, Dance
+     * Dance RuneScape, Crab Rave, Brutus Attack, Repeat After Me) only ever exists while that one
+     * mini-game's own arena is swapped in -- this card is a reference for the standard course, not
+     * whatever's currently playing. Iterates the catalog in its own served order (a LinkedHashMap,
+     * see RunePartyPlugin#tileTypeCatalog) rather than re-sorting, so this card's own row order
+     * always matches the map overlay's -- no reason for the two legends to disagree. Guarded by
+     * legendBuiltForCatalogSize so this only actually rebuilds once, the moment the catalog first
+     * lands (it never changes shape again after that). */
+    private void refreshLegend()
+    {
+        Map<String, ApiClient.TileTypeOut> catalog = plugin.getTileTypeCatalog();
+        if (catalog.isEmpty() || catalog.size() == legendBuiltForCatalogSize) return;
+        legendBuiltForCatalogSize = catalog.size();
+
+        legendRowsPanel.removeAll();
+        for (ApiClient.TileTypeOut t : catalog.values())
+        {
+            if (t.isModifier || t.isMinigameTile) continue;
+
+            JLabel row = new JLabel(t.displayName != null ? t.displayName : t.key);
+            row.setIcon(new TileSwatchIcon(legendTileColor(t)));
+            row.setIconTextGap(8);
+            row.setForeground(Color.WHITE);
+            row.setFont(FontManager.getRunescapeSmallFont());
+            row.setAlignmentX(LEFT_ALIGNMENT);
+            legendRowsPanel.add(row);
+            legendRowsPanel.add(Box.createVerticalStrut(4));
+        }
+        legendRowsPanel.revalidate();
+        legendRowsPanel.repaint();
+    }
+
+    /** Decodes a served tile type's own colorHex -- falls back to plain yellow on a missing/
+     * malformed value, same defensive fallback RunePartyMapOverlay#tileColor/TileOverlay#
+     * defaultColorFor already use for an unresolvable catalog color. */
+    private static Color legendTileColor(ApiClient.TileTypeOut t)
+    {
+        if (t.colorHex == null || t.colorHex.isBlank()) return Color.YELLOW;
+        try { return Color.decode(t.colorHex); }
+        catch (NumberFormatException e) { return Color.YELLOW; }
+    }
+
+    /** A small rounded-corner color square, painted directly rather than a bundled image asset --
+     * the legend row's own icon (see refreshLegend). */
+    private static final class TileSwatchIcon implements Icon
+    {
+        private static final int SIZE = 12;
+        private final Color color;
+
+        TileSwatchIcon(Color color) { this.color = color; }
+
+        @Override
+        public void paintIcon(Component c, Graphics g, int x, int y)
+        {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setColor(color);
+            g2.fillRoundRect(x, y, SIZE, SIZE, 4, 4);
+            g2.setColor(Color.BLACK);
+            g2.drawRoundRect(x, y, SIZE, SIZE, 4, 4);
+            g2.dispose();
+        }
+
+        @Override public int getIconWidth() { return SIZE; }
+        @Override public int getIconHeight() { return SIZE; }
     }
 
     private void buildMinigamePanel()
@@ -510,6 +627,7 @@ public class RunePartyPanel extends PluginPanel
         List<RosterReducer.RosterEntry> entries = plugin.getRosterReducer().snapshot();
         refreshItemUse(entries);
         refreshRoster(entries);
+        refreshLegend();
     }
 
     /** Shows one "Use &lt;item&gt; (x&lt;count&gt;)" button per distinct item the local player

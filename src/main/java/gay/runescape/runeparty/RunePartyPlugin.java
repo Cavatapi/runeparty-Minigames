@@ -2208,13 +2208,20 @@ public class RunePartyPlugin extends Plugin
         if (self == null || gid == null || token == null) return;
 
         // Set the instant a genuine attempt goes out, not on the response -- see
-        // goldenGnomePurchasedThisTurn's own doc. A "can't afford this" 409 never reaches the
-        // client as an event, so waiting for GOLDEN_GNOME_PURCHASED alone would leave the menu
-        // entry offered again on the very next right-click after a failed attempt.
+        // goldenGnomePurchasedThisTurn's own doc. Most rejection reasons (not reachable, already
+        // purchased this turn, ...) never reach the client as an event, so waiting for
+        // GOLDEN_GNOME_PURCHASED alone would leave the menu entry offered again on the very next
+        // right-click after a failed attempt.
         goldenGnomePurchasedThisTurn = true;
 
-        submitAction("Purchase Golden Gnome", () -> apiClient.purchaseGoldenGnome(gid, self, token, point.getX(), point.getY(), point.getPlane()),
-            e -> addChatMessage("Failed to purchase the Golden Gnome: " + e.getMessage()));
+        // No chat-message failure callback -- an insufficient-funds 409 (by far the only reachable
+        // rejection here, since the menu entry itself already pre-filters every other reason, see
+        // addGoldenGnomePurchaseMenuEntry's own doc) now also fires GOLDEN_GNOME_PURCHASE_FAILED,
+        // which GoldenGnomePresentation turns into a proper "You can't afford a Golden Gnome!"
+        // on-screen announcement instead -- a raw 409 chat line on top of that would just be
+        // redundant noise. Any other, genuinely unexpected failure still gets logged (see
+        // submitAction's own doc), just not surfaced to chat.
+        submitAction("Purchase Golden Gnome", () -> apiClient.purchaseGoldenGnome(gid, self, token, point.getX(), point.getY(), point.getPlane()));
     }
 
     // -------------------------------------------------------------------------
