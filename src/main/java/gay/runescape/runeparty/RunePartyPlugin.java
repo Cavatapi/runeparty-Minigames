@@ -389,6 +389,8 @@ public class RunePartyPlugin extends Plugin
      * RuneScape already use, and by {@link #MINIGAMES_NEEDING_PRE_ROUND_POSITION}. */
     public static final String REPEAT_AFTER_ME_KEY = "repeat-after-me";
 
+    public static final String RUNE_MATCH_KEY = "rune-match";
+
     /** Client-side key for the Crab Rave mini-game -- must match the server's own registration,
      * same role every other {@code *_KEY} plays for its own mini-game. Unlike every arena-based
      * mini-game above, this one never gates its own start on an arrival check (see

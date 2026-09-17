@@ -24,6 +24,7 @@ import gay.runescape.runeparty.minigames.SandwichRushPresentation;
 import gay.runescape.runeparty.minigames.TrueOrFalsePresentation;
 import gay.runescape.runeparty.minigames.TurfWarsPresentation;
 import gay.runescape.runeparty.minigames.WhosYourJaddyPresentation;
+import gay.runescape.runeparty.minigames.RuneMatchPresentation;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -122,6 +123,7 @@ public final class MinigamePresentation
     private final DanceDanceRuneScapePresentation danceDanceRuneScape;
     private final RainbowRushPresentation rainbowRush;
     private final RepeatAfterMePresentation repeatAfterMe;
+    private final RuneMatchPresentation runeMatch;
     private final CrabRavePresentation crabRave;
     private final BrutusAttackPresentation brutusAttack;
     // Every feature above, keyed by its own RunePartyPlugin.*_KEY, for generic dispatch (apply's
@@ -144,6 +146,7 @@ public final class MinigamePresentation
         this.danceDanceRuneScape = new DanceDanceRuneScapePresentation(plugin);
         this.rainbowRush = new RainbowRushPresentation(plugin);
         this.repeatAfterMe = new RepeatAfterMePresentation(plugin);
+        this.runeMatch = new RuneMatchPresentation(plugin);
         this.crabRave = new CrabRavePresentation(plugin);
         this.brutusAttack = new BrutusAttackPresentation(plugin);
 
@@ -160,6 +163,7 @@ public final class MinigamePresentation
         features.put(RunePartyPlugin.REPEAT_AFTER_ME_KEY, repeatAfterMe);
         features.put(RunePartyPlugin.CRAB_RAVE_KEY, crabRave);
         features.put(RunePartyPlugin.BRUTUS_ATTACK_KEY, brutusAttack);
+        features.put(RunePartyPlugin.RUNE_MATCH_KEY, runeMatch);
     }
 
     public void apply(ApiClient.EventOut e, boolean catchingUp)
@@ -477,6 +481,7 @@ public final class MinigamePresentation
     public DanceDanceRuneScapePresentation danceDanceRuneScape() { return danceDanceRuneScape; }
     public RainbowRushPresentation rainbowRush() { return rainbowRush; }
     public RepeatAfterMePresentation repeatAfterMe() { return repeatAfterMe; }
+    public RuneMatchPresentation runeMatch() { return runeMatch; }
     public CrabRavePresentation crabRave() { return crabRave; }
     public BrutusAttackPresentation brutusAttack() { return brutusAttack; }
 }
