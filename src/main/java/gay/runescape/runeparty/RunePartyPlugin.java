@@ -12,6 +12,7 @@ import gay.runescape.runeparty.presentation.JadPresentation;
 import gay.runescape.runeparty.presentation.WiseOldManPresentation;
 import gay.runescape.runeparty.presentation.ItemShopPresentation;
 import gay.runescape.runeparty.presentation.MinigamePresentation;
+import gay.runescape.runeparty.minigames.RuneMatchPresentation;
 import gay.runescape.runeparty.net.MinigameReward;
 import gay.runescape.runeparty.net.MinigameScore;
 
@@ -2171,6 +2172,16 @@ public class RunePartyPlugin extends Plugin
         return points;
     }
 
+    public List<WorldPoint> findRuneMatchTilePoints()
+    {
+        List<WorldPoint> points = new ArrayList<>();
+        for (TileReducer.TileEntry entry : tileReducer.snapshot())
+        {
+            if ("RUNE_MATCH_TILE".equals(entry.tileType)) points.add(entry.point);
+        }
+        return points;
+    }
+
     /** Every currently-marked Wise Old Man tile -- see WiseOldManNpcOverlay, the only reader: a
      * real, host-placed course stop (unlike GoldenGnomeTile/CoinTrapTile), so unlike those two
      * there could be more than one on the same board. Same "the reducer is the one source of
@@ -4050,6 +4061,15 @@ public class RunePartyPlugin extends Plugin
     /** Whether this round's own green/red reveal should be showing -- see RepeatAfterMePresentation#isRevealActive. */
     public boolean isRepeatAfterMeRevealActive() { return minigamePresentation.repeatAfterMe().isRevealActive(); }
     public int getRepeatAfterMeRoundNumber() { return minigamePresentation.repeatAfterMe().getRoundNumber(); }
+    public boolean isRuneMatchActive()
+    {
+        return minigamePresentation.isKeyActive(RUNE_MATCH_KEY);
+    }
+
+    public RuneMatchPresentation getRuneMatchPresentation()
+    {
+        return minigamePresentation.runeMatch();
+    }
 
     public boolean isCrabRaveActive() { return minigamePresentation.isKeyActive(CRAB_RAVE_KEY); }
     /** When the current Crab Rave round's own 30-second clock runs out -- 0 if no round is active

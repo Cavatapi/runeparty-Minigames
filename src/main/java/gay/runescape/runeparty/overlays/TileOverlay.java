@@ -15,6 +15,8 @@ import gay.runescape.runeparty.models.CoinTrapModel;
 import gay.runescape.runeparty.models.GoldenGnomeModel;
 import gay.runescape.runeparty.models.PondModel;
 import gay.runescape.runeparty.models.SandwichItemModel;
+import gay.runescape.runeparty.models.RuneMatchRuneModel;
+import gay.runescape.runeparty.minigames.RuneMatchPresentation;
 import gay.runescape.runeparty.models.TableModel;
 import gay.runescape.runeparty.minigames.RepeatAfterMePresentation;
 import net.runelite.api.Client;
@@ -36,6 +38,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.LinkedHashMap;
+
 
 /** Renders the course: committed tiles from TileReducer, plus a live placement/removal preview
  * while the host is building. A course is a one-tile-wide walked path, so every tile renders
@@ -182,6 +186,7 @@ public class TileOverlay extends Overlay
     private final PondModel pondModel;
     private final TableModel tableModel;
     private final SandwichItemModel sandwichItemModel;
+    private final RuneMatchRuneModel runeMatchRuneModel;
 
     public TileOverlay(Client client, RunePartyConfig config, RunePartyPlugin plugin, TileReducer tileReducer)
     {
@@ -197,6 +202,7 @@ public class TileOverlay extends Overlay
         this.pondModel = new PondModel(client);
         this.tableModel = new TableModel(client);
         this.sandwichItemModel = new SandwichItemModel(client);
+        runeMatchRuneModel = new RuneMatchRuneModel(client);
 
         setPosition(OverlayPosition.DYNAMIC);
         setLayer(OverlayLayer.ABOVE_SCENE);
@@ -214,8 +220,10 @@ public class TileOverlay extends Overlay
             clearPondModels();
             clearTableModels();
             clearSandwichItemModels();
+            clearRuneMatchModels();
             return null;
         }
+
         GamePhase phase = plugin.getPhase();
         if (phase != GamePhase.LOBBY && phase != GamePhase.ACTIVE)
         {
@@ -226,13 +234,19 @@ public class TileOverlay extends Overlay
             clearPondModels();
             clearTableModels();
             clearSandwichItemModels();
+            clearRuneMatchModels();
             return null;
         }
 
-        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setRenderingHint(
+                RenderingHints.KEY_ANTIALIASING,
+                RenderingHints.VALUE_ANTIALIAS_ON
+        );
 
         renderCommittedCourse(g);
+
         coinRushModel.update();
+        updateRuneMatchModels();
         sandwichItemModel.update(plugin.getSandwichRushSpawns());
 
         if (plugin.isCoursePlacementMode())
@@ -307,6 +321,48 @@ public class TileOverlay extends Overlay
         tableModel.update(entries);
         pondModel.update(entries);
         renderRouteLines(g, entries);
+    }
+
+    private void updateRuneMatchModels()
+    {
+        if (!plugin.isRuneMatchActive())
+        {
+            runeMatchRuneModel.clear();
+            return;
+        }
+
+        RuneMatchPresentation runeMatch = plugin.getRuneMatchPresentation();
+
+        if (runeMatch == null)
+        {
+            runeMatchRuneModel.clear();
+            return;
+        }
+
+        List<WorldPoint> runeTiles = runeMatch.getRuneTiles();
+        List<Integer> runeAssignments = runeMatch.getRuneAssignments();
+
+        if (runeTiles.size() != 16 || runeAssignments.size() != 16)
+        {
+            runeMatchRuneModel.clear();
+            return;
+        }
+
+        Map<Integer, RuneMatchRuneModel.RuneSpawn> spawns =
+                new LinkedHashMap<>();
+
+        for (int i = 0; i < 16; i++)
+        {
+            spawns.put(
+                    i,
+                    new RuneMatchRuneModel.RuneSpawn(
+                            runeTiles.get(i),
+                            runeAssignments.get(i)
+                    )
+            );
+        }
+
+        runeMatchRuneModel.update(spawns);
     }
 
     /** Draws the whole Fishing Contest platform's FISHING_TILE block as one merged-area outline,
@@ -498,6 +554,11 @@ public class TileOverlay extends Overlay
     public void clearSandwichItemModels()
     {
         sandwichItemModel.clear();
+    }
+
+    public void clearRuneMatchModels()
+    {
+        runeMatchRuneModel.clear();
     }
 
     /** Despawns and forgets every Arena Fire RuneLiteObject. */
